@@ -1,0 +1,19 @@
+entrypoint: gunicorn -t 2400 -b :$PORT main:app
+env: flex
+runtime: python
+runtime_config:
+  python_version: 3
+service: escena-detection-parallel
+env_variables:
+  CLOUD_SQL_CONNECTION_NAME: gchgame:us-central1:gotchu
+  DB_USER: neriasql
+  DB_PASS: Neria123
+  DB_NAME: responses
+liveness_check:
+  initial_delay_sec: 3600
+readiness_check:
+  app_start_timeout_sec: 1800
+resources:
+  cpu: 4
+  memory_gb: 24
+  disk_size_gb: 200

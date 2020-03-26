@@ -1,0 +1,5 @@
+entrypoint: gunicorn -t 2400 -b :$PORT main:app
+instance_class: F4_HIGHMEM
+runtime: python37
+service: explicit
+

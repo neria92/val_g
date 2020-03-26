@@ -1,0 +1,26 @@
+item {
+  id: 1
+  name: 'basura'
+}
+item {
+  id: 2
+  name: 'colilla'
+}
+item {
+  id: 3
+  name: 'morena'
+}
+item {
+  id: 4
+  name: 'pan'
+}
+item {
+  id: 5
+  name: 'prd'
+}
+item {
+  id: 6
+  name: 'pri'
+}
+
+

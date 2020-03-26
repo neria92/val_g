@@ -1,0 +1,15 @@
+flask==1.0.2
+flask-cors
+Werkzeug
+imutils==0.5.3
+CMake
+dlib
+face_recognition
+datetime
+Werkzeug
+google-cloud-storage
+opencv-python-headless
+six
+imutils==0.5.3
+matplotlib
+Pillow

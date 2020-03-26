@@ -1,0 +1,3 @@
+instance_class: F4_HIGHMEM
+runtime: python37
+service: face
