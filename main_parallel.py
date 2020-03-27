@@ -90,7 +90,7 @@ def loadmodel():
                 db.Column('Text', db.TEXT),
                 db.Column('Target_Scene',db.String(255)),
                 db.Column('Target_Extra',db.String(255)),
-                db.Column('Target Object',db.String(255)),
+                db.Column('Target_Object',db.String(255)),
                 db.Column('Detected Object(s)',db.String(255)),
                 db.Column('Location',db.BOOLEAN),
                 db.Column('Time',db.BOOLEAN),
@@ -1054,7 +1054,7 @@ def mysql_con(response):
                             'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
                             'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
                             'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
-                            'Target Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
+                            'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                             'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                             'Porn':json_respuesta['Porn'],'Scene':Service[1],'Extra':Service[2],
                             'Object':obj,'Service':json_respuesta['Service']}]
