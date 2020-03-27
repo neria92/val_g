@@ -88,6 +88,8 @@ def loadmodel():
                 db.Column('URL Primaria', db.TEXT),
                 db.Column('URL Selfie', db.TEXT),
                 db.Column('Text', db.TEXT),
+                db.Column('Target_Scene',db.String(255)),
+                db.Column('Target_Extra',db.String(255)),
                 db.Column('Target Object',db.String(255)),
                 db.Column('Detected Object(s)',db.String(255)),
                 db.Column('Location',db.BOOLEAN),
@@ -769,8 +771,12 @@ def location_time_validate():
     global obj
     global from_service
     global det
+    global validar1
     global validar2
+    global validar3
+    global validar4
     global validar5
+    global validar6
     global detected_obj
     global masked_url
     global url2json0
@@ -1047,6 +1053,7 @@ def mysql_con(response):
                             'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                             'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
                             'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
+                            'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
                             'Target Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                             'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                             'Porn':json_respuesta['Porn'],'Scene':Service[1],'Extra':Service[2],
