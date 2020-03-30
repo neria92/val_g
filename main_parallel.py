@@ -31,6 +31,7 @@ import face_recognition
 import sqlalchemy as db
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from random import randint
 from Utils import label_map_util
 from Utils import visualization_utils as vis_util
 from PIL import Image, ImageDraw
@@ -606,6 +607,15 @@ def detect_human(image_path,validar,extras):
         url2json0[0] = upload_image_file(image)
         image = face_recognition.load_image_file(image)
         face_landmarks_list = face_recognition.face_landmarks(image)
+
+        marks_list = {'images/00.png':[1.6,405,105,160,1],'images/01.png':[1.6,405,105,160,1],'images/02.png':[1.6,405,105,160,1],
+                      'images/03.png':[1.6,405,105,160,1],'images/04.png':[1.6,405,105,160,1],'images/05.png':[1.6,405,105,160,1],
+                      'images/10.png':[1.95,500,150,170,1],'images/11.png':[1.95,500,150,170,1],'images/12.png':[1.95,500,150,170,1],
+                      'images/13.png':[1.95,500,150,170,1],'images/14.png':[1.95,500,150,170,1],'images/15.png':[1.95,500,150,170,1],
+                      'images/20.png':[1.73,500,130,190,1.486],'images/21.png':[1.73,500,130,190,1.486],'images/22.png':[1.73,500,130,190,1.486],
+                      'images/23.png':[1.73,500,130,190,1.486],'images/24.png':[1.73,500,130,190,1.486],'images/25.png':[1.73,500,130,190,1.486]}
+
+
         if face_landmarks_list == []:
             url2json = ''
             Service[2] = False
@@ -619,6 +629,10 @@ def detect_human(image_path,validar,extras):
             y_coords = []
             facial_centroids = {}
 
+            k = randint(0,2)  
+            l = randint(0,5)  
+            name_img = 'images/' + str(k) + str(l) + '.png'
+
             for facial_feature in face_landmarks_list[i].keys():
                 facial_centroids[facial_feature] = centeroidnp(np.asarray(face_landmarks_list[i][facial_feature]))
                 x_coords.extend([x for x, y in face_landmarks_list[i][facial_feature]])
@@ -627,8 +641,8 @@ def detect_human(image_path,validar,extras):
             xychin = [(x, y) for x, y in face_landmarks_list[i]['chin']]
             chin_distance = floor(max(pdist(np.asarray(xychin))))
             eye_distance = euclidean(np.asarray(facial_centroids['left_eye']),np.asarray(facial_centroids['right_eye']))
-            mask_nsize = floor(chin_distance*1.6) #1.6 es calculado
-            mask_nsize_factor = mask_nsize/405 #shape original mask 
+            mask_nsize = floor(chin_distance*marks_list[name_img][0]) #1.6 es calculado
+            mask_nsize_factor = mask_nsize/marks_list[name_img][1] #shape original mask 
 
             x = min(face_landmarks_list[i]['left_eyebrow'])[0]
             y = min(face_landmarks_list[i]['left_eyebrow'])[1]
@@ -638,8 +652,8 @@ def detect_human(image_path,validar,extras):
             myradians = atan2(dy,dx)
             mydegrees = -degrees(myradians)
             
-            mask = cv2.imread('images/gotchu_mascara.png',-1)
-            mask = cv2.resize(mask,(mask_nsize,mask_nsize)) 
+            mask = cv2.imread(name_img,-1)
+            mask = cv2.resize(mask,(mask_nsize,floor(mask_nsize*marks_list[name_img][4]))) 
 
             ####Código muy especial e infernal
             angle_rad = np.deg2rad(mydegrees)
@@ -649,8 +663,8 @@ def detect_human(image_path,validar,extras):
             out_bounds = rot_matrix @ [[0],
                                     [mask_nsize]]
             estrella = out_bounds[0][0]
-            lens_point_out = rot_matrix @ [[mask_nsize_factor*105],
-                                        [mask_nsize_factor*160]]
+            lens_point_out = rot_matrix @ [[mask_nsize_factor*marks_list[name_img][2]],
+                                        [mask_nsize_factor*marks_list[name_img][3]]]
             if mydegrees <= 0:
                 x160 = lens_point_out[0][0] - estrella
                 y90 = lens_point_out[1][0]
