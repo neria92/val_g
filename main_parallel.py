@@ -951,7 +951,6 @@ def location_time_validate():
                     validar4 = 'none'
                     validar6 = 'none'
                     pass
-                validar6 = request.args.get('o_validar_extra')
                 
                 #FACE... START
                 val_face = request.args.get('val_face')
