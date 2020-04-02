@@ -943,12 +943,13 @@ def location_time_validate():
                 validar3 = request.args.get('validar_extra')
                 validar4 = request.args.get('o_validar_escena')
                 validar5 = request.args.get('o_validar_objeto')
+                validar6 = request.args.get('o_validar_extra')
                 try:
                     validar5 = validar5.replace('.',' ')
                 except Exception:
                     validar5 = 'none'
                     validar4 = 'none'
-                    validar3 = 'none'
+                    validar6 = 'none'
                     pass
                 validar6 = request.args.get('o_validar_extra')
                 
