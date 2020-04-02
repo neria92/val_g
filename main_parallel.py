@@ -947,6 +947,8 @@ def location_time_validate():
                     validar5 = validar5.replace('.',' ')
                 except Exception:
                     validar5 = 'none'
+                    validar4 = 'none'
+                    validar3 = 'none'
                     pass
                 validar6 = request.args.get('o_validar_extra')
                 
