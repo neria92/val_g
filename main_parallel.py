@@ -998,11 +998,15 @@ def location_time_validate():
                             p2.start()
                             p3 = Process(target=porn(x))
                             p3.start()
+                            p4 = Process(target=screen(y))
+                            p4.start()
                             p1.join()
                             p2.join()
                             p3.join()
+                            p4.join()
                             p1.terminate
                             p3.terminate
+                            p4.terminate
                             p2.terminate
                             
                             if False in Service:
@@ -1066,9 +1070,13 @@ def location_time_validate():
                                                 p2.start()
                                                 p3 = Process(target=porn(x))
                                                 p3.start()
+                                                p4 = Process(target=screen(y))
+                                                p3.start()
                                                 p1.join()
                                                 p2.join()
                                                 p3.join()
+                                                p4.join()
+                                                p4.terminate
                                                 p3.terminate
                                                 p1.terminate
                                                 p2.terminate
