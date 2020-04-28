@@ -975,12 +975,12 @@ def location_time_validate():
                 if val_face != None:
                     face_rec = face_recog(val_face,image_path)
                     if face_rec == True:
-                        Service = [False,False,False]
+                        Service = [False,False,False,False]
                         from_service = 'face recognition'
                         json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False}
                         return jsonify(json_respuesta)
                     else:
-                        Service = [False,False,False]
+                        Service = [False,False,False,False]
                         from_service = 'face recognition'
                         json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False}
                         return jsonify(json_respuesta)
