@@ -111,7 +111,7 @@ def loadmodel():
         face = face_recognition.load_image_file(i)
         my_faces.append(face_recognition.face_encodings(face)[0])
 
-    Service = ['0','1','2']
+    Service = ['0','1','2','3']
     masked_url = ['']
     url2json0 = ['']
     MINIMUM_CONFIDENCE = 0.4
@@ -149,6 +149,7 @@ def loadmodel():
     model_incres = load_model('INCResV2_model_premier.h5')
     porn_model = load_model('porn_model_premier.h5')
     yolo_model = load_model('YOLOV3_model.h5')
+    screen_model = load_model('Screen-live_model_super_99-99_7.h5')
 
     prediction = CustomImagePrediction()
     prediction.setModelTypeAsResNet()
@@ -167,7 +168,7 @@ def loadmodel():
     app.model = [sess,image_tensor,detection_boxes,
                  detection_scores,detection_classes,num_detections,
                  CATEGORY_INDEX,MINIMUM_CONFIDENCE,model_incres,
-                 detector,prediction,porn_model,yolo_model,Service]
+                 detector,prediction,porn_model,yolo_model,Service,screen_model]
 
 #CORS(app)
 
@@ -796,6 +797,16 @@ def porn(x):
         Service[0] = False #SI
 
 #CORS(app)
+def screen(y):
+    screen_model = app.model[14]            
+    screen_preds = screen_model.predict(y)
+    #Es imagen tomada de una pantalla?
+    if screen_preds[0][0] > 0.5:
+        Service[3] = False #SI
+    else:
+        Service[3] = True #NO
+
+#CORS(app)
 def face_recog(val_face,image_path):
 
     
@@ -896,7 +907,13 @@ def location_time_validate():
                 x = ig.img_to_array(img)
                 x = x.reshape((1,) + x.shape)
                 x=x/255
-                
+
+                img = img.save('/images/001.JPG')  #
+                img = ig.load_img('/images/001.JPG', target_size = (299,299))  #
+                y = ig.img_to_array(img)
+                y = y.reshape((1,) + y.shape)
+                y = y/255
+
                 Service = app.model[13]
                 T = []
                 class_names = ['agua_calles','anaqueles_vacios','banqueta','calle_oscura','calles',
@@ -999,9 +1016,12 @@ def location_time_validate():
                                             p2.start()
                                             p3 = Process(target=porn(x))
                                             p3.start()
+                                            p4 = Process(target=screen(y))
+                                            p4.start()
                                             p1.join()
                                             p2.join()
                                             p3.join()
+                                            p4.terminate
                                             p3.terminate
                                             p1.terminate
                                             p2.terminate
