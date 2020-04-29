@@ -908,8 +908,8 @@ def location_time_validate():
                 x = x.reshape((1,) + x.shape)
                 x=x/255
 
-                img = img.save('/images/001.JPG')  #
-                img = ig.load_img('/images/001.JPG', target_size = (299,299))  #
+                img = img.save('images/001.JPG')  #
+                img = ig.load_img('images/001.JPG', target_size = (299,299))  #
                 y = ig.img_to_array(img)
                 y = y.reshape((1,) + y.shape)
                 y = y/255
