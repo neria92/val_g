@@ -149,7 +149,7 @@ def loadmodel():
     model_incres = load_model('INCResV2_model_premier.h5')
     porn_model = load_model('porn_model_premier.h5')
     yolo_model = load_model('YOLOV3_model.h5')
-    screen_model = load_model('Screen-live_model_super_99-99_7.h5')
+    screen_model = load_model('Screen-live_model_superTF114_99-99_7.h5')
 
     prediction = CustomImagePrediction()
     prediction.setModelTypeAsResNet()
