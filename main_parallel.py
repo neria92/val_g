@@ -96,6 +96,7 @@ def loadmodel():
                 db.Column('Location',db.BOOLEAN),
                 db.Column('Time',db.BOOLEAN),
                 db.Column('Porn',db.BOOLEAN),
+                db.Column('Live',db.BOOLEAN),
                 db.Column('Scene',db.BOOLEAN),
                 db.Column('Extra',db.BOOLEAN),
                 db.Column('Object',db.BOOLEAN),
@@ -791,7 +792,7 @@ def porn(x):
     porn_model = app.model[11]            
     porn_preds = porn_model.predict(x)
     #Es imagen inapropiada?
-    if porn_preds[0][0] > 0.5:
+    if porn_preds[0][0] > 0.05:
         Service[0] = True #NO
     else:
         Service[0] = False #SI
@@ -1143,7 +1144,7 @@ def mysql_con(response):
                             'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
                             'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                             'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
-                            'Porn':json_respuesta['Porn'],'Scene':Service[1],'Extra':Service[2],
+                            'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
                             'Object':obj,'Service':json_respuesta['Service']}]
         query_cloud = db.insert(result_data)
         ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
