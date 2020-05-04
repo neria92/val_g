@@ -1133,7 +1133,7 @@ CORS(app)
 def mysql_con(response):
     #Query a Cloud SQL
     try:
-        data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
+        data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
                             'User Id':data['id'],'User Name':data['name'],
                             'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
                             'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
