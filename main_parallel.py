@@ -50,7 +50,7 @@ cloud_sql_connection_name = os.environ.get("CLOUD_SQL_CONNECTION_NAME")
 
 app = Flask(__name__)
 
-logger = logging.getLogger()
+#logger = logging.getLogger()
 
 engine = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database}?unix_socket=/cloudsql/{cloud_sql_connection_name}')
 
@@ -147,7 +147,7 @@ def loadmodel():
     
     num_detections = detection_graph.get_tensor_by_name('num_detections:0')
 
-    model_incres = load_model('INCResV2_model_premier.h5')
+    model_incres = load_model('Porn_model+_alpha_TF114.h5')
     porn_model = load_model('porn_model_premier.h5')
     yolo_model = load_model('YOLOV3_model.h5')
     screen_model = load_model('Screen-live_model_superTF114_99-99_7.h5')
@@ -793,9 +793,9 @@ def porn(x):
     porn_preds = porn_model.predict(x)
     #Es imagen inapropiada?
     if porn_preds[0][0] > 0.05:
-        Service[0] = True #NO
+        Service[0] = True #NO#Safe
     else:
-        Service[0] = False #SI
+        Service[0] = False #SI#Porn
 
 #CORS(app)
 def screen(y):
@@ -997,7 +997,7 @@ def location_time_validate():
                             p1.start()
                             p2 = Process(target=detect_human(image_path,validar3,extras))
                             p2.start()
-                            p3 = Process(target=porn(x))
+                            p3 = Process(target=porn(y))
                             p3.start()
                             p4 = Process(target=screen(y))
                             p4.start()
@@ -1019,13 +1019,14 @@ def location_time_validate():
                                             p1.start()
                                             p2 = Process(target=detect_human(image_path,validar6,extras))
                                             p2.start()
-                                            p3 = Process(target=porn(x))
+                                            p3 = Process(target=porn(y))
                                             p3.start()
                                             p4 = Process(target=screen(y))
                                             p4.start()
                                             p1.join()
                                             p2.join()
                                             p3.join()
+                                            p4.join()
                                             p4.terminate
                                             p3.terminate
                                             p1.terminate
@@ -1069,10 +1070,10 @@ def location_time_validate():
                                                 p1.start()
                                                 p2 = Process(target=detect_human(image_path,validar6,extras))
                                                 p2.start()
-                                                p3 = Process(target=porn(x))
+                                                p3 = Process(target=porn(y))
                                                 p3.start()
                                                 p4 = Process(target=screen(y))
-                                                p3.start()
+                                                p4.start()
                                                 p1.join()
                                                 p2.join()
                                                 p3.join()
@@ -1150,7 +1151,26 @@ def mysql_con(response):
         ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
     except Exception as e:
         print(e)
-        pass
+        try:
+            connection = engine.connect()
+            data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                            'User Id':data['id'],'User Name':data['name'],
+                            'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
+                            'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
+                            'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
+                            'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
+                            'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
+                            'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
+                            'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
+                            'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
+                            'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
+                            'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
+                            'Object':obj,'Service':json_respuesta['Service']}]
+            query_cloud = db.insert(result_data)
+            ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
+        except Exception as e:
+            print(e)
+            pass
     
     return response
         
