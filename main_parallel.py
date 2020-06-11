@@ -26,7 +26,6 @@ import os
 import sys
 import dlib
 import logging
-import sqlalchemy
 import face_recognition
 import sqlalchemy as db
 import tensorflow as tf
@@ -147,8 +146,8 @@ def loadmodel():
     
     num_detections = detection_graph.get_tensor_by_name('num_detections:0')
 
-    model_incres = load_model('Porn_model+_alpha_TF114.h5')
-    porn_model = load_model('porn_model_premier.h5')
+    model_incres = load_model('INCResV2_model_premier.h5')
+    porn_model = load_model('Porn_model+_alpha_TF114.h5')
     yolo_model = load_model('YOLOV3_model.h5')
     screen_model = load_model('Screen-live_model_superTF114_99-99_7.h5')
 
@@ -797,6 +796,45 @@ def porn(x):
     else:
         Service[0] = False #SI#Porn
 
+def porn_explicit(image_path,i):
+    global Service
+        
+    response = requests.get(image_path)
+    img = Image.open(BytesIO(response.content))
+    
+    if img.format == 'PNG':
+        img = img.resize((299,299))
+        img.save('/tmp/0003.png')
+
+        j = '/tmp/0003.png'
+        img = cv2.imread(j)
+        cv2.imwrite(j[:-3] + 'jpg', img)
+
+        img = Image.open('/tmp/0003.jpg')
+        img = img.resize((299,299))
+        img = img.save('/tmp/001.JPG')  #
+        img = ig.load_img('/tmp/001.JPG', target_size = (299,299))  #
+        x = ig.img_to_array(img)
+        x = x.reshape((1,) + x.shape)
+        x = x/255
+        
+    else:
+        img = img.resize((299,299))
+        img = img.save('/tmp/001.JPG')  #
+        img = ig.load_img('/tmp/001.JPG', target_size = (299,299))  #
+        x = ig.img_to_array(img)
+        x = x.reshape((1,) + x.shape)
+        x = x/255
+
+    porn_model = app.model[11]       
+    porn_preds = porn_model.predict(x)
+    #print(porn_preds[0][0])
+    #Es imagen inapropiada?
+    if porn_preds[0][0] > 0.5:
+        Service[i] = False #NO#Safe
+    else:
+        Service[i] = True #SI#Porn
+
 #CORS(app)
 def screen(y):
     screen_model = app.model[14]            
@@ -806,6 +844,24 @@ def screen(y):
         Service[3] = False #SI
     else:
         Service[3] = True #NO
+
+def screen_explicit(image_path):
+    response = requests.get(image_path)
+    img = Image.open(BytesIO(response.content))
+                    
+    img = img.resize((299,299))
+    img = img.save('images/001.JPG')  #
+    img = ig.load_img('images/001.JPG', target_size = (299,299))  #
+    y = ig.img_to_array(img)
+    y = y.reshape((1,) + y.shape)
+    y = y/255
+    screen_model = app.model[14]            
+    screen_preds = screen_model.predict(y)
+    #Es imagen tomada de una pantalla?
+    if screen_preds[0][0] > 0.5:
+        Service[3] = True #SI
+    else:
+        Service[3] = False #NO
 
 #CORS(app)
 def face_recog(val_face,image_path):
@@ -832,7 +888,7 @@ def face_recog(val_face,image_path):
 
 #CORS(app)
   
-@app.route('/', methods=['POST','GET'])
+@app.route('/', methods=['POST'])
 def location_time_validate():
     global data
     global json_respuesta
@@ -1129,7 +1185,95 @@ def location_time_validate():
         json_respuesta = {'Location':False,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
         return jsonify(json_respuesta)
 
-CORS(app)
+@app.route('/explicit', methods=['POST'])
+def contenido_explicito():
+    global data
+    global json_respuesta
+    global Service
+
+    global obj
+    global from_service
+    global det
+    global validar1
+    global validar2
+    global validar3
+    global validar4
+    global validar5
+    global validar6
+    global detected_obj
+    global masked_url
+    global url2json0
+
+    validar1 = 'none'
+    validar2 = 'none'
+    validar3 = 'none'
+    validar4 = 'none'
+    validar5 = 'none'
+    validar6 = 'none'
+    obj = True
+    det = 'na'
+    detected_obj = 'na'
+    url2json0 = ['']
+    masked_url = ['']
+
+    Service = [False,False,False,False]
+    from_service = 'Explicit'
+
+    data = request.json
+    re_explicit = request.args.get('re')
+    if re_explicit == 'true':
+        from_service = 'Re:Explicit'
+    forb_words = ['matar','asesinar','violar','acuchillar','secuestrar',
+                  'linchar','chingar','chingate','joder','jodete','coger',
+                  'follar','puto','puta','malnacido',
+                  'pito','polla','pendeja','pendejo','pinche','mierda',
+                  'concha','chingatumadre','descuartizar']
+    extras = ['persona','selfie','cara']
+    text = data['text']
+    
+    target_text_list = forb_words
+    text = text.lower()
+    text = unidecode.unidecode(text)
+    final_text = len([word for word in target_text_list if(word in text)])>=1    
+
+    if not final_text:
+        if data['url'] != '':
+            image_path = data['url']
+            p1 = Process(target=porn_explicit(image_path,0))
+            p1.start()
+            if re_explicit == 'true':
+                p2 = Process(target=screen_explicit(image_path))
+                p2.start()
+                p3 = Process(target=detect_human(image_path,'selfie',extras))
+                Service[2] = False
+                p3.start()
+                p2.join()
+                p3.join()
+            p1.join()
+            p1.terminate
+            if re_explicit == 'true':
+                p2.terminate
+                p3.terminate
+        
+        if data['url2'] != '':
+            image_path2 = data['url2']
+            p1 = Process(target=porn_explicit(image_path2,1))
+            p1.start()
+            p1.join()
+            p1.terminate
+                  
+        if True in Service:
+            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
+            return jsonify(json_respuesta)
+        else:
+            json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
+            return jsonify(json_respuesta)
+    
+    else:
+        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
+        return jsonify(json_respuesta)
+
+#CORS(app)
 @app.after_request
 def mysql_con(response):
     #Query a Cloud SQL
