@@ -1263,7 +1263,7 @@ def contenido_explicito():
             p1.terminate
                   
         if True in Service:
-            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
+            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
             return jsonify(json_respuesta)
         else:
             json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
