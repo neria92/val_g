@@ -25,7 +25,6 @@ import cv2
 import os
 import sys
 import dlib
-import logging
 import face_recognition
 import sqlalchemy as db
 import tensorflow as tf
@@ -59,13 +58,11 @@ engine = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database}?unix_s
 def loadmodel():
     global Service
     global masked_url
-    global connection
     global result_data
     global my_faces
     global nombres
     global url2json0
 
-    connection = engine.connect()
     metadata = db.MetaData()
 
     #base de datos de texto
@@ -1220,9 +1217,47 @@ def contenido_explicito():
     from_service = 'Explicit'
 
     data = request.json
+
+    gettime = request.args.get('time')
+    getloc = request.args.get('loc')
+
+    if gettime == None and getloc == None:
+        time = True
+        loc = True
+    elif gettime == 'y' and getloc == 'y':
+        time = True
+        loc = True
+    elif gettime == 'n' and getloc == 'y':
+        time = False
+        loc = True
+    elif gettime == 'y' and getloc == 'n':
+        time = True
+        loc = False
+    elif gettime == 'n' and getloc == 'n':
+        time = False
+        loc = False
+
     re_explicit = request.args.get('re')
     if re_explicit == 'true':
         from_service = 'Re:Explicit'
+        latitud_usuario = data['Location_latitude']
+        longitud_usuario = data['Location_longitude']
+        latitud_mision = data['Location_mission_latitude']
+        longitud_mision = data['Location_mission_longitude']
+        radio = data['Location_mission_radio']
+        fecha_inicio = data['Start_Date_mission']
+        fecha_final = data['End_Date_mission']
+        duracion = data['Target_time_mission']
+    else:
+        latitud_usuario = 0
+        longitud_usuario = 0
+        latitud_mision = 0
+        longitud_mision = 0
+        radio = 100
+        fecha_inicio = "2019-08-10 19:19:08.293319"
+        fecha_final = "2019-08-10 20:04:08.293365"
+        duracion = 9000
+
     forb_words = ['matar','asesinar','violar','acuchillar','secuestrar',
                   'linchar','chingar','chingate','joder','jodete','coger',
                   'follar','puto','puta','malnacido',
@@ -1237,38 +1272,56 @@ def contenido_explicito():
     final_text = len([word for word in target_text_list if(word in text)])>=1    
 
     if not final_text:
-        if data['url'] != '':
-            image_path = data['url']
-            p1 = Process(target=porn_explicit(image_path,0))
-            p1.start()
-            if re_explicit == 'true':
-                p2 = Process(target=screen_explicit(image_path))
-                p2.start()
-                p3 = Process(target=detect_human(image_path,'selfie',extras))
-                Service[2] = False
-                p3.start()
-                p2.join()
-                p3.join()
-            p1.join()
-            p1.terminate
-            if re_explicit == 'true':
-                p2.terminate
-                p3.terminate
+
+        user_pos = (latitud_usuario,longitud_usuario) 
+        mission_point_pos = (latitud_mision,longitud_mision)
         
-        if data['url2'] != '':
-            image_path2 = data['url2']
-            p1 = Process(target=porn_explicit(image_path2,1))
-            p1.start()
-            p1.join()
-            p1.terminate
-                  
-        if True in Service:
-            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
-            return jsonify(json_respuesta)
+        if (geodesic(user_pos, mission_point_pos).meters <= radio or not loc):
+        
+            start_date = datetime.strptime(fecha_inicio, '%Y-%m-%d %H:%M:%S.%f')
+            end_date = datetime.strptime(fecha_final, '%Y-%m-%d %H:%M:%S.%f')
+            user_time = (end_date - start_date).total_seconds()
+            mission_target_time = duracion
+            
+            if (user_time <= mission_target_time or not time):
+
+                if data['url'] != '':
+                    image_path = data['url']
+                    p1 = Process(target=porn_explicit(image_path,0))
+                    p1.start()
+                    if re_explicit == 'true':
+                        p2 = Process(target=screen_explicit(image_path))
+                        p2.start()
+                        p3 = Process(target=detect_human(image_path,'selfie',extras))
+                        Service[2] = False
+                        p3.start()
+                        p2.join()
+                        p3.join()
+                    p1.join()
+                    p1.terminate
+                    if re_explicit == 'true':
+                        p2.terminate
+                        p3.terminate
+                
+                if data['url2'] != '':
+                    image_path2 = data['url2']
+                    p1 = Process(target=porn_explicit(image_path2,1))
+                    p1.start()
+                    p1.join()
+                    p1.terminate
+                        
+                if True in Service:
+                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
+                    return jsonify(json_respuesta)
+                else:
+                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
+                    return jsonify(json_respuesta)
+            else:
+                json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
+                return jsonify(json_respuesta)
         else:
-            json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
             return jsonify(json_respuesta)
-    
     else:
         json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
         return jsonify(json_respuesta)
@@ -1278,43 +1331,25 @@ def contenido_explicito():
 def mysql_con(response):
     #Query a Cloud SQL
     try:
-        data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
-                            'User Id':data['id'],'User Name':data['name'],
-                            'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
-                            'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
-                            'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
-                            'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
-                            'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
-                            'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
-                            'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
-                            'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
-                            'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
-                            'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
-                            'Object':obj,'Service':json_respuesta['Service']}]
-        query_cloud = db.insert(result_data)
-        ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
-    except Exception as e:
-        print(e)
-        try:
-            connection = engine.connect()
+        with engine.connect() as connection:
             data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
-                            'User Id':data['id'],'User Name':data['name'],
-                            'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
-                            'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
-                            'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
-                            'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
-                            'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
-                            'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
-                            'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
-                            'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
-                            'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
-                            'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
-                            'Object':obj,'Service':json_respuesta['Service']}]
+                                'User Id':data['id'],'User Name':data['name'],
+                                'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
+                                'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
+                                'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
+                                'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
+                                'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
+                                'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
+                                'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
+                                'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
+                                'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
+                                'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
+                                'Object':obj,'Service':json_respuesta['Service']}]
             query_cloud = db.insert(result_data)
             ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
-        except Exception as e:
-            print(e)
-            pass
+    except Exception as e:
+        print(e)
+        pass
     
     return response
         
