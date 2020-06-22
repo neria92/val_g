@@ -1349,8 +1349,30 @@ def mysql_con(response):
             ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
     except Exception as e:
         print(e)
-        pass
-    
+
+        try:
+            with engine.connect() as connection:
+                data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                                    'User Id':data['id'],'User Name':data['name'],
+                                    'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
+                                    'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
+                                    'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
+                                    'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
+                                    'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
+                                    'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
+                                    'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
+                                    'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
+                                    'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
+                                    'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
+                                    'Object':obj,'Service':json_respuesta['Service']}]
+                query_cloud = db.insert(result_data)
+                ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
+                print('Se logró')
+        except Exception as e:
+            print(e)
+            print('Otra vez...')
+            pass
+
     return response
         
 if __name__ == '__main__':
