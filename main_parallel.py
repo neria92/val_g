@@ -1260,7 +1260,7 @@ def contenido_explicito():
 
     forb_words = ['matar','asesinar','violar','acuchillar','secuestrar',
                   'linchar','chingar','chingate','joder','jodete','coger',
-                  'follar','puto','puta','malnacido',
+                  'follar','puto','puta','malnacido', 'golpear',
                   'pito','polla','pendeja','pendejo','pinche','mierda',
                   'concha','chingatumadre','descuartizar']
     extras = ['persona','selfie','cara']
