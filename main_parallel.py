@@ -446,6 +446,33 @@ def url_to_image(url):
 	urllib.request.urlretrieve(url,'01.jpg')
 	return '01.jpg'
 
+def load_image_file_270(file, mode='RGB'):
+    """
+    Loads an image file (.jpg, .png, etc) into a numpy array
+
+    :param file: image file name or file object to load
+    :param mode: format to convert the image to. Only 'RGB' (8-bit RGB, 3 channels) and 'L' (black and white) are supported.
+    :return: image contents as numpy array
+    """
+    im = Image.open(file).transpose(Image.ROTATE_270)
+    
+    if mode:
+        im = im.convert(mode)
+    return np.array(im)
+
+def load_image_file_90(file, mode='RGB'):
+    """
+    Loads an image file (.jpg, .png, etc) into a numpy array
+
+    :param file: image file name or file object to load
+    :param mode: format to convert the image to. Only 'RGB' (8-bit RGB, 3 channels) and 'L' (black and white) are supported.
+    :return: image contents as numpy array
+    """
+    im = Image.open(file).transpose(Image.ROTATE_90)
+    
+    if mode:
+        im = im.convert(mode)
+    return np.array(im)
 #CORS(app)
 
 def detect_objects(image_path,validar,names,labels):
@@ -644,9 +671,9 @@ def detect_human(image_path,validar,extras):
             Service[2] = True
 
     if validar == 'selfie':
-        image = url_to_image(image_path)
-        url2json0[0] = upload_image_file(image)
-        image = face_recognition.load_image_file(image)
+        image_origin = url_to_image(image_path)
+        url2json0[0] = upload_image_file(image_origin)
+        image = face_recognition.load_image_file(image_origin)
         face_landmarks_list = face_recognition.face_landmarks(image)
 
         marks_list = {'images/00.png':[1.6,405,105,160,1],'images/01.png':[1.6,405,105,160,1],'images/02.png':[1.6,405,105,160,1],
@@ -658,10 +685,16 @@ def detect_human(image_path,validar,extras):
 
 
         if face_landmarks_list == []:
-            url2json = ''
-            Service[2] = False
-            masked_url[0] = url2json
-            return
+            image = load_image_file_270(image_origin)
+            face_landmarks_list = face_recognition.face_landmarks(image)
+            if face_landmarks_list == []:
+                image = load_image_file_90(image_origin)
+                face_landmarks_list = face_recognition.face_landmarks(image)
+                if face_landmarks_list == []:
+                    url2json = ''
+                    Service[2] = False
+                    masked_url[0] = url2json
+                    return
         face = image
 
         for i in range(len(face_landmarks_list)):
