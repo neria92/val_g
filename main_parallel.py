@@ -694,8 +694,8 @@ def detect_human(image_path,validar,extras):
                       'images/03.png':[1.6,405,105,160,1],'images/04.png':[1.6,405,105,160,1],'images/05.png':[1.6,405,105,160,1],
                       'images/10.png':[1.95,500,150,170,1],'images/11.png':[1.95,500,150,170,1],'images/12.png':[1.95,500,150,170,1],
                       'images/13.png':[1.95,500,150,170,1],'images/14.png':[1.95,500,150,170,1],'images/15.png':[1.95,500,150,170,1],
-                      'images/20.png':[1.73,500,130,190,1.486],'images/21.png':[1.73,500,130,190,1.486],'images/22.png':[1.73,500,130,190,1.486],
-                      'images/23.png':[1.73,500,130,190,1.486],'images/24.png':[1.73,500,130,190,1.486],'images/25.png':[1.73,500,130,190,1.486]}
+                      'images/20.png':[1.73,500,143,190,1.486],'images/21.png':[1.73,500,143,190,1.486],'images/22.png':[1.73,500,143,190,1.486],
+                      'images/23.png':[1.73,500,143,190,1.486],'images/24.png':[1.73,500,143,190,1.486],'images/25.png':[1.73,500,143,190,1.486]}
 
 
         if face_landmarks_list == []:
@@ -752,7 +752,7 @@ def detect_human(image_path,validar,extras):
             rot_matrix = np.array([[c, s],
                                     [-s, c]])
             out_bounds = rot_matrix @ [[0],
-                                    [mask_nsize]]
+                                    [mask_nsize*marks_list[name_img][4]]]
             estrella = out_bounds[0][0]
             lens_point_out = rot_matrix @ [[mask_nsize_factor*marks_list[name_img][2]],
                                         [mask_nsize_factor*marks_list[name_img][3]]]
