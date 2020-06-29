@@ -573,6 +573,60 @@ def detect_objects(image_path,validar,names,labels):
 
 #CORS(app)
 
+def masked_face(image,marks_list,end=False):
+    if end:
+        image_path = image
+        image_origin = url_to_image(image_path)
+        image = face_recognition.load_image_file(image_origin)
+
+    faces = face_recognition.face_locations(image,model='cnn')
+    
+    if faces == []:
+        if not end:
+            url2json = ''
+            Service[2] = False
+            masked_url[0] = url2json
+            return False
+        else:
+            return
+
+    for i in range(len(faces)):
+        top, right, bottom, left = faces[i]
+
+        k = randint(0,2)  
+        l = randint(0,5)  
+        name_img = 'images/' + str(k) + str(l) + '.png'
+
+        mask_nsize = floor((right-left)*marks_list[name_img][0])
+        mask_nsize_factor = mask_nsize/marks_list[name_img][1]
+
+        mask = cv2.imread(name_img,-1)
+        mask = cv2.resize(mask,(mask_nsize,floor(mask_nsize*marks_list[name_img][4]))) 
+        w, h, c = mask.shape
+
+        face = cv2.cvtColor(image,cv2.COLOR_BGR2BGRA)
+        x = left
+        y = top
+        z = floor(mask_nsize_factor*marks_list[name_img][3])
+        z1 = floor(mask_nsize_factor*marks_list[name_img][5])
+        for i in range(w):
+            for j in range(h):
+                if mask[i,j][3] != 0 and mask[i,j][3] == 255:
+                    try:
+                        if y+i-z < 0 or x+j-z1 < 0:
+                            continue
+                        face[y+i-z,x+j-z1] = mask[i,j]
+                    except IndexError as e:
+                        pass
+
+    plt.imsave('face.jpg',face)
+
+    url2json = upload_image_file('face.jpg')
+    Service[2] = True
+    masked_url[0] = url2json
+    return True
+
+
 def detect_human(image_path,validar,extras):
     if validar == 'persona':
         hog = cv2.HOGDescriptor()
@@ -690,24 +744,36 @@ def detect_human(image_path,validar,extras):
         image = face_recognition.load_image_file(image_origin)
         face_landmarks_list = face_recognition.face_landmarks(image)
 
-        marks_list = {'images/00.png':[1.6,405,105,160,1],'images/01.png':[1.6,405,105,160,1],'images/02.png':[1.6,405,105,160,1],
-                      'images/03.png':[1.6,405,105,160,1],'images/04.png':[1.6,405,105,160,1],'images/05.png':[1.6,405,105,160,1],
-                      'images/10.png':[1.95,500,150,170,1],'images/11.png':[1.95,500,150,170,1],'images/12.png':[1.95,500,150,170,1],
-                      'images/13.png':[1.95,500,150,170,1],'images/14.png':[1.95,500,150,170,1],'images/15.png':[1.95,500,150,170,1],
-                      'images/20.png':[1.73,500,143,190,1.486],'images/21.png':[1.73,500,143,190,1.486],'images/22.png':[1.73,500,143,190,1.486],
-                      'images/23.png':[1.73,500,143,190,1.486],'images/24.png':[1.73,500,143,190,1.486],'images/25.png':[1.73,500,143,190,1.486]}
+        marks_list = {'images/00.png':[1.6,405,105,160,1,60],'images/01.png':[1.6,405,105,160,1,60],'images/02.png':[1.6,405,105,160,1,60],#indice 5 es la punta izquiera del sombrero
+                      'images/03.png':[1.6,405,105,160,1,60],'images/04.png':[1.6,405,105,160,1,60],'images/05.png':[1.6,405,105,160,1,60],
+                      'images/10.png':[1.95,500,150,170,1,110],'images/11.png':[1.95,500,150,170,1,110],'images/12.png':[1.95,500,150,170,1,110],
+                      'images/13.png':[1.95,500,150,170,1,110],'images/14.png':[1.95,500,150,170,1,110],'images/15.png':[1.95,500,150,170,1,110],
+                      'images/20.png':[1.73,500,143,190,1.486,95],'images/21.png':[1.73,500,143,190,1.486,95],'images/22.png':[1.73,500,143,190,1.486,95],#26/06/20 CAMBIÉ 130 POR 143
+                      'images/23.png':[1.73,500,143,190,1.486,95],'images/24.png':[1.73,500,143,190,1.486,95],'images/25.png':[1.73,500,143,190,1.486,95]}
 
 
         if face_landmarks_list == []:
+            incomplete_faces = masked_face(image,marks_list)######
+            if incomplete_faces:
+                return
             image = load_image_file_270(image_origin)
             face_landmarks_list = face_recognition.face_landmarks(image)
             if face_landmarks_list == []:
+                incomplete_faces = masked_face(image,marks_list)######
+                if incomplete_faces:
+                    return
                 image = load_image_file_90(image_origin)
                 face_landmarks_list = face_recognition.face_landmarks(image)
                 if face_landmarks_list == []:
+                    incomplete_faces = masked_face(image,marks_list)######
+                    if incomplete_faces:
+                        return
                     image = load_image_file_180(image_origin)
                     face_landmarks_list = face_recognition.face_landmarks(image)
                     if face_landmarks_list == []:
+                        incomplete_faces = masked_face(image,marks_list)######
+                        if incomplete_faces:
+                            return
                         url2json = ''
                         Service[2] = False
                         masked_url[0] = url2json
@@ -786,6 +852,7 @@ def detect_human(image_path,validar,extras):
         url2json = upload_image_file('face.jpg')
         Service[2] = True
         masked_url[0] = url2json
+        masked_face(masked_url[0],marks_list,end=True)
         return
 
     if validar == 'na':
