@@ -573,23 +573,38 @@ def detect_objects(image_path,validar,names,labels):
 
 #CORS(app)
 
-def masked_face(image,marks_list,end=False):
-    if end:
-        image_path = image
-        image_origin = url_to_image(image_path)
-        image = face_recognition.load_image_file(image_origin)
+def masked_face(image_path,end=False):      
+    image_origin = url_to_image(image_path)
+    image = face_recognition.load_image_file(image_origin)
+    faces = face_recognition.face_locations(image)
 
-    faces = face_recognition.face_locations(image,model='cnn')
-    
+    marks_list = {'images/00.png':[1.6,405,105,160,1,60],'images/01.png':[1.6,405,105,160,1,60],'images/02.png':[1.6,405,105,160,1,60],#indice 5 es la punta izquiera del sombrero
+                      'images/03.png':[1.6,405,105,160,1,60],'images/04.png':[1.6,405,105,160,1,60],'images/05.png':[1.6,405,105,160,1,60],
+                      'images/10.png':[1.95,500,150,170,1,110],'images/11.png':[1.95,500,150,170,1,110],'images/12.png':[1.95,500,150,170,1,110],
+                      'images/13.png':[1.95,500,150,170,1,110],'images/14.png':[1.95,500,150,170,1,110],'images/15.png':[1.95,500,150,170,1,110],
+                      'images/20.png':[1.73,500,143,190,1.486,95],'images/21.png':[1.73,500,143,190,1.486,95],'images/22.png':[1.73,500,143,190,1.486,95],#26/06/20 CAMBIÉ 130 POR 143
+                      'images/23.png':[1.73,500,143,190,1.486,95],'images/24.png':[1.73,500,143,190,1.486,95],'images/25.png':[1.73,500,143,190,1.486,95]}
+
+
     if faces == []:
-        if not end:
-            url2json = ''
-            Service[2] = False
-            masked_url[0] = url2json
-            return False
-        else:
-            return
 
+        if end:
+            return
+        
+        image = load_image_file_270(image_origin)
+        faces = face_recognition.face_locations(image)
+        if faces == []:
+            image = load_image_file_90(image_origin)
+            faces = face_recognition.face_locations(image)
+            if faces == []:
+                image = load_image_file_180(image_origin)
+                faces = face_recognition.face_locations(image)
+                if faces == []:
+                    url2json = ''
+                    Service[2] = False
+                    masked_url[0] = url2json
+                    return False
+        
     for i in range(len(faces)):
         top, right, bottom, left = faces[i]
 
@@ -753,27 +768,15 @@ def detect_human(image_path,validar,extras):
 
 
         if face_landmarks_list == []:
-            incomplete_faces = masked_face(image,marks_list)######
-            if incomplete_faces:
-                return
             image = load_image_file_270(image_origin)
             face_landmarks_list = face_recognition.face_landmarks(image)
             if face_landmarks_list == []:
-                incomplete_faces = masked_face(image,marks_list)######
-                if incomplete_faces:
-                    return
                 image = load_image_file_90(image_origin)
                 face_landmarks_list = face_recognition.face_landmarks(image)
                 if face_landmarks_list == []:
-                    incomplete_faces = masked_face(image,marks_list)######
-                    if incomplete_faces:
-                        return
                     image = load_image_file_180(image_origin)
                     face_landmarks_list = face_recognition.face_landmarks(image)
                     if face_landmarks_list == []:
-                        incomplete_faces = masked_face(image,marks_list)######
-                        if incomplete_faces:
-                            return
                         url2json = ''
                         Service[2] = False
                         masked_url[0] = url2json
@@ -852,7 +855,7 @@ def detect_human(image_path,validar,extras):
         url2json = upload_image_file('face.jpg')
         Service[2] = True
         masked_url[0] = url2json
-        masked_face(masked_url[0],marks_list,end=True)
+        masked_face(masked_url[0],end=True)
         return
 
     if validar == 'na':
@@ -1419,6 +1422,8 @@ def contenido_explicito():
                     if re_explicit == 'true':
                         p2.terminate
                         p3.terminate
+                        if masked_url[0] == '':
+                            masked_face(image_path)
                 
                 if data['url2'] != '':
                     image_path2 = data['url2']
