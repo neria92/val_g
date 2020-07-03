@@ -446,6 +446,26 @@ def url_to_image(url):
 	urllib.request.urlretrieve(url,'01.jpg')
 	return '01.jpg'
 
+def load_image_file_0(file, mode='RGB'):
+    """
+    Loads an image file (.jpg, .png, etc) into a numpy array
+
+    :param file: image file name or file object to load
+    :param mode: format to convert the image to. Only 'RGB' (8-bit RGB, 3 channels) and 'L' (black and white) are supported.
+    :return: image contents as numpy array
+    """
+    im = Image.open(file)
+    
+    if mode:
+        im = im.convert(mode)
+    im = np.array(im)
+    al, an, ca = im.shape
+    if al > an:
+        im = cv2.resize(im,(700,1400))
+    else:
+        im = cv2.resize(im,(1400,700))
+    return im
+
 def load_image_file_270(file, mode='RGB'):
     """
     Loads an image file (.jpg, .png, etc) into a numpy array
@@ -458,7 +478,13 @@ def load_image_file_270(file, mode='RGB'):
     
     if mode:
         im = im.convert(mode)
-    return np.array(im)
+    im = np.array(im)
+    al, an, ca = im.shape
+    if al > an:
+        im = cv2.resize(im,(700,1400))
+    else:
+        im = cv2.resize(im,(1400,700))
+    return im
 
 def load_image_file_180(file, mode='RGB'):
     """
@@ -472,7 +498,13 @@ def load_image_file_180(file, mode='RGB'):
     
     if mode:
         im = im.convert(mode)
-    return np.array(im)
+    im = np.array(im)
+    al, an, ca = im.shape
+    if al > an:
+        im = cv2.resize(im,(700,1400))
+    else:
+        im = cv2.resize(im,(1400,700))
+    return im
 
 def load_image_file_90(file, mode='RGB'):
     """
@@ -486,7 +518,13 @@ def load_image_file_90(file, mode='RGB'):
     
     if mode:
         im = im.convert(mode)
-    return np.array(im)
+    im = np.array(im)
+    al, an, ca = im.shape
+    if al > an:
+        im = cv2.resize(im,(700,1400))
+    else:
+        im = cv2.resize(im,(1400,700))
+    return im
 #CORS(app)
 
 def detect_objects(image_path,validar,names,labels):
@@ -573,10 +611,10 @@ def detect_objects(image_path,validar,names,labels):
 
 #CORS(app)
 
-def masked_face(image_path,end=False):      
-    image_origin = url_to_image(image_path)
-    image = face_recognition.load_image_file(image_origin)
-    faces = face_recognition.face_locations(image)
+def masked_face(image,end=False):
+    if end:
+        image = face_recognition.load_image_file(image)
+    faces = face_recognition.face_locations(image,model='cnn')
 
     marks_list = {'images/00.png':[1.6,405,105,160,1,60],'images/01.png':[1.6,405,105,160,1,60],'images/02.png':[1.6,405,105,160,1,60],#indice 5 es la punta izquiera del sombrero
                       'images/03.png':[1.6,405,105,160,1,60],'images/04.png':[1.6,405,105,160,1,60],'images/05.png':[1.6,405,105,160,1,60],
@@ -591,19 +629,10 @@ def masked_face(image_path,end=False):
         if end:
             return
         
-        image = load_image_file_270(image_origin)
-        faces = face_recognition.face_locations(image)
-        if faces == []:
-            image = load_image_file_90(image_origin)
-            faces = face_recognition.face_locations(image)
-            if faces == []:
-                image = load_image_file_180(image_origin)
-                faces = face_recognition.face_locations(image)
-                if faces == []:
-                    url2json = ''
-                    Service[2] = False
-                    masked_url[0] = url2json
-                    return False
+        url2json = data['url']
+        Service[2] = False
+        masked_url[0] = url2json
+        return False
         
     for i in range(len(faces)):
         top, right, bottom, left = faces[i]
@@ -641,6 +670,37 @@ def masked_face(image_path,end=False):
     masked_url[0] = url2json
     return True
 
+def imagen_final(image_path):
+    if image_path == '':
+        return ''
+
+    image_origin = url_to_image(image_path)
+    imagen_con_logo = load_image_file_0(image_origin)
+    
+    alto, ancho, p = imagen_con_logo.shape
+
+    name_logo = 'images/GotchuColorBack_512x512.png'
+    logo = face_recognition.load_image_file(name_logo)
+    logo = cv2.resize(logo,(150,150))
+    w, h, c = logo.shape
+
+    x = ancho - w
+    y = alto - h
+
+    for i in range(w):
+        for j in range(h):
+            if True: #list(logo[i,j]) != [255,255,255] and list(logo[i,j])[1]<160:
+                try:
+                    if y+i < 0 or x+j < 0:
+                        continue
+                    
+                    imagen_con_logo[y+i,x+j] = logo[i,j]
+                except IndexError as e:
+                    pass
+
+    plt.imsave('imagen_con_logo.jpg',imagen_con_logo)
+    url2json = upload_image_file('imagen_con_logo.jpg')
+    return url2json
 
 def detect_human(image_path,validar,extras):
     if validar == 'persona':
@@ -756,7 +816,7 @@ def detect_human(image_path,validar,extras):
     if validar == 'selfie':
         image_origin = url_to_image(image_path)
         url2json0[0] = upload_image_file(image_origin)
-        image = face_recognition.load_image_file(image_origin)
+        image = load_image_file_0(image_origin)
         face_landmarks_list = face_recognition.face_landmarks(image)
 
         marks_list = {'images/00.png':[1.6,405,105,160,1,60],'images/01.png':[1.6,405,105,160,1,60],'images/02.png':[1.6,405,105,160,1,60],#indice 5 es la punta izquiera del sombrero
@@ -768,19 +828,23 @@ def detect_human(image_path,validar,extras):
 
 
         if face_landmarks_list == []:
+            if masked_face(image):
+                return
             image = load_image_file_270(image_origin)
             face_landmarks_list = face_recognition.face_landmarks(image)
             if face_landmarks_list == []:
+                if masked_face(image):
+                    return
                 image = load_image_file_90(image_origin)
                 face_landmarks_list = face_recognition.face_landmarks(image)
                 if face_landmarks_list == []:
-                    image = load_image_file_180(image_origin)
-                    face_landmarks_list = face_recognition.face_landmarks(image)
-                    if face_landmarks_list == []:
-                        url2json = ''
-                        Service[2] = False
-                        masked_url[0] = url2json
+                    if masked_face(image):
                         return
+                    url2json = data['url']
+                    Service[2] = False
+                    masked_url[0] = url2json
+                    return
+
         face = image
 
         for i in range(len(face_landmarks_list)):
@@ -789,8 +853,8 @@ def detect_human(image_path,validar,extras):
             y_coords = []
             facial_centroids = {}
 
-            k = randint(0,2)  
-            l = randint(0,5)  
+            k = randint(0,2)
+            l = randint(0,5)
             name_img = 'images/' + str(k) + str(l) + '.png'
 
             for facial_feature in face_landmarks_list[i].keys():
@@ -855,7 +919,7 @@ def detect_human(image_path,validar,extras):
         url2json = upload_image_file('face.jpg')
         Service[2] = True
         masked_url[0] = url2json
-        masked_face(masked_url[0],end=True)
+        masked_face('face.jpg',end=True)
         return
 
     if validar == 'na':
@@ -988,7 +1052,7 @@ def face_recog(val_face,image_path):
   
     # my_face_encoding now contains a universal 'encoding' of my facial features that can be compared to any other picture of a face!
     image = url_to_image(url)
-    unknown_picture = face_recognition.load_image_file(image)
+    unknown_picture = load_image_file_0(image)
     unknown_face_encodings = face_recognition.face_encodings(unknown_picture)
     
     # Now we can see the two face encodings are of the same person with `compare_faces`!
@@ -1023,14 +1087,14 @@ def location_time_validate():
     global masked_url
     global url2json0
 
+    data = request.json
     url2json0 = ['']
-    masked_url = ['']
+    masked_url = [data['url']]
     det = 'na'
     detected_obj = 'na'
     obj = False
     from_service = 'premier'
 
-    data = request.json
     
     gettime = request.args.get('time')
     getloc = request.args.get('loc')
@@ -1206,25 +1270,25 @@ def location_time_validate():
                                             p2.terminate
                                             
                                             if False in Service:
-                                                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':masked_url[0]}
+                                                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
                                                 return jsonify(json_respuesta)
                                                 
                                             else:
                                                 det, detected_obj = detect_objects(image_path,validar5,objects,labels)
                                                 obj = det == validar5 or det in ppoliticos
-                                                json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':masked_url[0]}
+                                                json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':imagen_final(masked_url[0])}
                                                 return jsonify(json_respuesta)
 
                                         else:
-                                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':masked_url[0]}
+                                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
                                             return jsonify(json_respuesta)
 
                                     else:
-                                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':masked_url[0]}
+                                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
                                         return jsonify(json_respuesta)
 
                                 else:
-                                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':masked_url[0]}
+                                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
                                     return jsonify(json_respuesta)
 
                                 
@@ -1232,7 +1296,7 @@ def location_time_validate():
                                 det, detected_obj = detect_objects(image_path,validar2,objects,labels)
                                 if det == validar2 or det in ppoliticos:
                                     obj = True
-                                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':masked_url[0]}
+                                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':imagen_final(masked_url[0])}
                                     return jsonify(json_respuesta)
                                 else:
                                     if validar4 in class_names or validar4 == 'na':
@@ -1257,49 +1321,49 @@ def location_time_validate():
                                                 p2.terminate
                                                 
                                                 if False in Service:
-                                                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':masked_url[0]}
+                                                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
                                                     return jsonify(json_respuesta)
                                                 
                                                 else:
                                                     det, detected_obj = detect_objects(image_path,validar5,objects,labels)
                                                     obj = det == validar5 or det in ppoliticos
-                                                    json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':masked_url[0]}
+                                                    json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':imagen_final(masked_url[0])}
                                                     return jsonify(json_respuesta)
 
                                             else:
-                                                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+                                                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
                                                 return jsonify(json_respuesta)
 
                                         else:
-                                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+                                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
                                             return jsonify(json_respuesta)
 
                                     else:
-                                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+                                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
                                         return jsonify(json_respuesta)
         
                         else:
-                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
                             return jsonify(json_respuesta)                            
                             
                     else:
-                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
                         return jsonify(json_respuesta)
 
                 else:
-                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
                     return jsonify(json_respuesta)
             
             else:
-                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
                 return jsonify(json_respuesta)
                              
         else:
-            json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':False,'Url_themask':''}
             return jsonify(json_respuesta)
        
     else:
-        json_respuesta = {'Location':False,'Time':True,'Service':False,'Porn':False,'Url_themask':masked_url[0]}
+        json_respuesta = {'Location':False,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
         return jsonify(json_respuesta)
 
 @app.route('/explicit', methods=['POST'])
@@ -1321,6 +1385,7 @@ def contenido_explicito():
     global masked_url
     global url2json0
 
+    data = request.json
     validar1 = 'none'
     validar2 = 'none'
     validar3 = 'none'
@@ -1331,12 +1396,11 @@ def contenido_explicito():
     det = 'na'
     detected_obj = 'na'
     url2json0 = ['']
-    masked_url = ['']
+    masked_url = [data['url']]
 
     Service = [False,False,False,False]
     from_service = 'Explicit'
 
-    data = request.json
 
     gettime = request.args.get('time')
     getloc = request.args.get('loc')
@@ -1422,9 +1486,7 @@ def contenido_explicito():
                     if re_explicit == 'true':
                         p2.terminate
                         p3.terminate
-                        if masked_url[0] == '':
-                            masked_face(image_path)
-                
+                                        
                 if data['url2'] != '':
                     image_path2 = data['url2']
                     p1 = Process(target=porn_explicit(image_path2,1))
@@ -1436,7 +1498,7 @@ def contenido_explicito():
                     json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
                     return jsonify(json_respuesta)
                 else:
-                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
+                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':imagen_final(masked_url[0])}
                     return jsonify(json_respuesta)
             else:
                 json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
@@ -1445,7 +1507,7 @@ def contenido_explicito():
             json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
             return jsonify(json_respuesta)
     else:
-        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':masked_url[0]}
+        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
         return jsonify(json_respuesta)
 
 #CORS(app)
