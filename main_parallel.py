@@ -613,7 +613,9 @@ def detect_objects(image_path,validar,names,labels):
 
 def masked_face(image,end=False):
     if end:
+        return####DEV
         image = face_recognition.load_image_file(image)
+    return False####DEV
     faces = face_recognition.face_locations(image,model='cnn')
 
     marks_list = {'images/00.png':[1.6,405,105,160,1,60],'images/01.png':[1.6,405,105,160,1,60],'images/02.png':[1.6,405,105,160,1,60],#indice 5 es la punta izquiera del sombrero
@@ -679,7 +681,7 @@ def imagen_final(image_path):
     
     alto, ancho, p = imagen_con_logo.shape
 
-    name_logo = 'images/GotchuColorBack_512x512.png'
+    name_logo = 'images/GotchuLogo.png'
     logo = face_recognition.load_image_file(name_logo)
     logo = cv2.resize(logo,(150,150))
     w, h, c = logo.shape
@@ -689,7 +691,7 @@ def imagen_final(image_path):
 
     for i in range(w):
         for j in range(h):
-            if True: #list(logo[i,j]) != [255,255,255] and list(logo[i,j])[1]<160:
+            if list(logo[i,j]) != [255,255,255] and list(logo[i,j])[1]<160:
                 try:
                     if y+i < 0 or x+j < 0:
                         continue
@@ -1523,7 +1525,7 @@ def mysql_con(response):
                                 'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
                                 'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                                 'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
-                                'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
+                                'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':json_respuesta['Url_themask'],'Text':data['text'],
                                 'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
                                 'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                                 'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
@@ -1543,7 +1545,7 @@ def mysql_con(response):
                                     'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
                                     'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                                     'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
-                                    'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':masked_url[0],'Text':data['text'],
+                                    'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':json_respuesta['Url_themask'],'Text':data['text'],
                                     'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
                                     'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                                     'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
