@@ -25,6 +25,7 @@ import cv2
 import os
 import sys
 import dlib
+import pandas as pd
 import face_recognition
 import sqlalchemy as db
 import tensorflow as tf
@@ -39,29 +40,39 @@ from scipy import ndimage
 from scipy.spatial.distance import euclidean, pdist, squareform
 from google.cloud import storage
 from werkzeug.utils import secure_filename
+import yagmail
 
 user = os.environ.get("DB_USER")
 password = os.environ.get("DB_PASS")
 database = os.environ.get("DB_NAME")
+database_misions = os.environ.get("DB_NAME_MISIONS")
 cloud_sql_connection_name = os.environ.get("CLOUD_SQL_CONNECTION_NAME")
 
+account_e = os.environ.get("ACC")
+password_e = os.environ.get("PASS")
 
 app = Flask(__name__)
 
-#logger = logging.getLogger()
-
 engine = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database}?unix_socket=/cloudsql/{cloud_sql_connection_name}')
-
-#CORS(app)
+engine_misions = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database_misions}?unix_socket=/cloudsql/{cloud_sql_connection_name}')
 
 @app.before_first_request
 def loadmodel():
     global Service
     global masked_url
     global result_data
+    global missions_taifelds
+    global missions_covid
     global my_faces
     global nombres
     global url2json0
+    global receivers
+    global body_covid
+    global body_taifelds
+
+    receivers = ['gotchudl@gmail.com','back.ght.001@gmail.com','medel@cimat.mx']
+    body_taifelds = "Hay una nueva misión de Taifelds para validar en https://gchgame.web.app/ con número de tienda: "
+    body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
 
     metadata = db.MetaData()
 
@@ -99,6 +110,42 @@ def loadmodel():
                 db.Column('Service',db.BOOLEAN),
                 )
     metadata.create_all(engine) #Creates Table
+
+    missions_taifelds = db.Table('taifelds', metadata,
+              db.Column('Id',db.Integer, nullable=False),
+              db.Column('Store',db.String(255), nullable=False),
+              db.Column('Name',db.String(255), nullable=False),
+              db.Column('Address',db.String(255), nullable=False),
+              db.Column('Latitude',db.String(255), nullable=False),
+              db.Column('Longitude',db.String(255), nullable=False),
+              db.Column('Flag',db.String(255), nullable=False),
+              db.Column('Date',db.DateTime, nullable=False),
+              db.Column('User_Id',db.String(255), nullable=False),
+              db.Column('User_Latitude',db.DECIMAL, nullable=False),
+              db.Column('User_Longitude',db.DECIMAL, nullable=False),
+              db.Column('Url_Photo',db.String(255), nullable=False),
+              db.Column('Url_Video',db.String(255), nullable=False),
+              db.Column('Mission_Id',db.String(255), nullable=False),
+              )
+    metadata.create_all(engine_misions) #Creates Table
+
+    missions_covid = db.Table('covid', metadata,
+              db.Column('Id',db.Integer, nullable=False),
+              db.Column('Name',db.String(255), nullable=False),
+              db.Column('Address',db.String(255), nullable=False),
+              db.Column('Institution',db.String(255), nullable=False),
+              db.Column('Latitude',db.String(255), nullable=False),
+              db.Column('Longitude',db.String(255), nullable=False),
+              db.Column('Flag',db.String(255), nullable=False),
+              db.Column('Date',db.DateTime, nullable=False),
+              db.Column('User_Id',db.String(255), nullable=False),
+              db.Column('User_Latitude',db.DECIMAL, nullable=False),
+              db.Column('User_Longitude',db.DECIMAL, nullable=False),
+              db.Column('Url_Photo',db.String(255), nullable=False),
+              db.Column('Url_Video',db.String(255), nullable=False),
+              db.Column('Mission_Id',db.String(255), nullable=False),
+              )
+    metadata.create_all(engine_misions) #Creates Table
 
     my_faces = []
     images = ['images/ManuelNeria.jpeg','images/Alex.jpg','images/Alma.jpg','images/Robert.jpg',
@@ -167,7 +214,6 @@ def loadmodel():
                  CATEGORY_INDEX,MINIMUM_CONFIDENCE,model_incres,
                  detector,prediction,porn_model,yolo_model,Service,screen_model]
 
-#CORS(app)
 
 def url_to_image2(url):
 	"""download the image, convert it to a NumPy array, and then read
@@ -274,12 +320,8 @@ class BoundBox:
             
         return self.score
 
-#CORS(app)
-
 def _sigmoid(x):
 	return 1. / (1. + np.exp(-x))
-
-#CORS(app)
 
 def decode_netout(netout, anchors, obj_thresh, net_h, net_w):
 	grid_h, grid_w = netout.shape[:2]
@@ -311,8 +353,6 @@ def decode_netout(netout, anchors, obj_thresh, net_h, net_w):
 			boxes.append(box)
 	return boxes
  
-#CORS(app)
-
 def correct_yolo_boxes(boxes, image_h, image_w, net_h, net_w):
     if (float(net_w)/image_w) < (float(net_h)/image_h):
         new_w = net_w
@@ -330,8 +370,6 @@ def correct_yolo_boxes(boxes, image_h, image_w, net_h, net_w):
         boxes[i].ymin = int((boxes[i].ymin - y_offset) / y_scale * image_h)
         boxes[i].ymax = int((boxes[i].ymax - y_offset) / y_scale * image_h)
 
-#CORS(app)
-
 def _interval_overlap(interval_a, interval_b):
 	x1, x2 = interval_a
 	x3, x4 = interval_b
@@ -346,8 +384,6 @@ def _interval_overlap(interval_a, interval_b):
 		else:
 			return min(x2,x4) - x3
 
-#CORS(app)
- 
 def bbox_iou(box1, box2):
 	intersect_w = _interval_overlap([box1.xmin, box1.xmax], [box2.xmin, box2.xmax])
 	intersect_h = _interval_overlap([box1.ymin, box1.ymax], [box2.ymin, box2.ymax])
@@ -356,8 +392,6 @@ def bbox_iou(box1, box2):
 	w2, h2 = box2.xmax-box2.xmin, box2.ymax-box2.ymin
 	union = w1*h1 + w2*h2 - intersect
 	return float(intersect) / union
-
-#CORS(app)
 
 def do_nms(boxes, nms_thresh):
     if len(boxes) > 0:
@@ -379,8 +413,6 @@ def do_nms(boxes, nms_thresh):
                 if bbox_iou(boxes[index_i], boxes[index_j]) >= nms_thresh:
                     boxes[index_j].classes[c] = 0
                     
-#CORS(app)
-
 def draw_boxes(filename, v_boxes, v_labels, v_scores):
 	# load the image
 	data = pyplot.imread(filename)
@@ -405,8 +437,6 @@ def draw_boxes(filename, v_boxes, v_labels, v_scores):
 	# show the plot
 	pyplot.show()
 
-#CORS(app)
-
 def get_boxes(boxes, labels, thresh):
 	v_boxes, v_labels, v_scores = list(), list(), list()
 	# enumerate all boxes
@@ -420,8 +450,6 @@ def get_boxes(boxes, labels, thresh):
 				v_scores.append(box.classes[i]*100)
 				# don't break, many labels may trigger for one box
 	return v_boxes, v_labels, v_scores
-
-#CORS(app)
 
 def load_image_pixels(filename, shape):
     # load the image to get its shape
@@ -441,7 +469,6 @@ def load_image_pixels(filename, shape):
     image = expand_dims(image, 0)
     return image, width, height
 
-#CORS(app)
 def url_to_image(url):
 	urllib.request.urlretrieve(url,'01.jpg')
 	return '01.jpg'
@@ -525,7 +552,6 @@ def load_image_file_90(file, mode='RGB'):
     else:
         im = cv2.resize(im,(1400,700))
     return im
-#CORS(app)
 
 def detect_objects(image_path,validar,names,labels):
     if validar in names:
@@ -608,8 +634,6 @@ def detect_objects(image_path,validar,names,labels):
             return ', '.join(v_labels), ', '.join(v_labels)
     else:
         return validar, validar
-
-#CORS(app)
 
 def masked_face(image,end=False):
     if end:
@@ -927,7 +951,6 @@ def detect_human(image_path,validar,extras):
     if validar == 'na':
         Service[2] = True
 
-#CORS(app)
 def detect_scene(image_path,validar,class_names,class_names_param,x):
     if validar == 'na':
         Service[1] = True
@@ -969,7 +992,6 @@ def detect_scene(image_path,validar,class_names,class_names_param,x):
             if T == []:
                 Service[1] = False
 
-#CORS(app)
 def porn(x):
     porn_model = app.model[11]            
     porn_preds = porn_model.predict(x)
@@ -1018,7 +1040,6 @@ def porn_explicit(image_path,i):
     else:
         Service[i] = True #SI#Porn
 
-#CORS(app)
 def screen(y):
     screen_model = app.model[14]            
     screen_preds = screen_model.predict(y)
@@ -1046,7 +1067,24 @@ def screen_explicit(image_path):
     else:
         Service[3] = False #NO
 
-#CORS(app)
+def liveness(image_path):
+    response = requests.get(image_path)
+    img = Image.open(BytesIO(response.content))
+                    
+    img = img.resize((299,299))
+    img = img.save('images/005.JPG')  #
+    img = ig.load_img('images/005.JPG', target_size = (299,299))  #
+    y = ig.img_to_array(img)
+    y = y.reshape((1,) + y.shape)
+    y = y/255
+    screen_model = app.model[14]            
+    screen_preds = screen_model.predict(y)
+    #Es imagen tomada de una pantalla?
+    if screen_preds[0][0] > 0.5:
+        return False #SI
+    else:
+        return True #NO
+
 def face_recog(val_face,image_path):
 
     
@@ -1069,8 +1107,7 @@ def face_recog(val_face,image_path):
     else:
         return False
 
-#CORS(app)
-  
+
 @app.route('/', methods=['POST'])
 def location_time_validate():
     global data
@@ -1512,10 +1549,394 @@ def contenido_explicito():
         json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
         return jsonify(json_respuesta)
 
-#CORS(app)
+@app.route('/taifelds', methods=['POST'])
+def taifelds_service():
+    global data
+    global json_respuesta
+    global bandera
+    global from_service
+
+    from_service = 'Taifelds'
+
+    data = request.json
+    bandera = request.args.get('re_data')
+
+    if bandera == 'yes':
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag == 'Pending')).fetchall()
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    results = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag == 'Pending')).fetchall()
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+        if len(results) == 0:
+            return jsonify({'Service':False})
+        df = pd.DataFrame(results)
+        df.columns = results[0].keys()
+        lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+
+        id_tienda_salida = data['Id_Store']
+        if id_tienda_salida not in ids:
+            return jsonify({'Service':False})
+
+        status = data['Status']
+        user_id = data['User_Id']
+        user_lat = data['User_Latitude']
+        user_lng = data['User_Longitude']
+        url_p = data['Url_Photo']
+        url_v = data['Url_Video']
+        miss_id = data['Mission_Id']
+
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(missions_taifelds.update().where(missions_taifelds.c.Id == id_tienda_salida).values(Flag = status,
+                    Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
+                    Url_Video = url_v, Mission_Id = miss_id))
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    connection.execute(missions_taifelds.update().where(missions_taifelds.c.Id == id_tienda_salida).values(Flag = status,
+                        Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
+                        Url_Video = url_v, Mission_Id = miss_id))
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+
+        
+        return jsonify({'Service':True})
+
+    elif bandera != None:
+        print('Error de request')
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+        return jsonify(json_respuesta)
+    else:
+        pass
+
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag != 'Yes')).fetchall()
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag != 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+            return jsonify(json_respuesta)
+    if len(results) == 0:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+        return jsonify(json_respuesta)
+    df = pd.DataFrame(results)
+    df.columns = results[0].keys()
+    lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+    user_pos = (data['Location_latitude'],data['Location_longitude']) 
+    
+    image_path = data['url']
+    distancias = []
+    for t, g in zip(lat,lng):
+        distancias.append(geodesic(user_pos,(t,g)).meters)
+    if min(distancias) < 300:
+        
+        start_date = datetime.strptime(data['Start_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        end_date = datetime.strptime(data['End_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        user_time = (end_date - start_date).total_seconds()
+        mission_target_time = data['Target_time_mission']
+
+        if (user_time<=mission_target_time):
+            if liveness(image_path):
+                j = np.argmin(distancias)
+                direc = address[j]
+                id_tienda = ids[j]
+                try:
+                    with engine_misions.connect() as connection:
+                        connection.execute(missions_taifelds.update().where(missions_taifelds.c.Address == direc).values(Flag = 'Pending'))
+                except Exception as e:
+                    print(e)
+                    try:
+                        with engine_misions.connect() as connection:
+                            connection.execute(missions_taifelds.update().where(missions_taifelds.c.Address == direc).values(Flag = 'Pending'))
+                    except Exception as e:
+                        print(e)
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+                        return jsonify(json_respuesta)
+                
+                try:
+
+                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
+
+                    payload = {'id_tienda':id_tienda,'message':body_taifelds,'service':from_service,'subject':'Taifelds - NUEVA MISION'}
+                    headers = {'Content-Type': 'application/json'}
+
+                    response = requests.request("POST", url, headers=headers, data = payload)
+
+                except Exception as e:
+                    print(e)
+                    pass
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda}
+                return jsonify(json_respuesta)
+
+            else:
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0}
+                return jsonify(json_respuesta)
+        else:
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
+            return jsonify(json_respuesta)
+    else:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
+        return jsonify(json_respuesta)
+
+@app.route('/covid', methods=['POST'])
+def covid_service():
+    global data
+    global json_respuesta
+    global bandera
+    global from_service
+
+    from_service = 'Covid'
+
+    data = request.json
+    bandera = request.args.get('re_data')
+
+    if bandera == 'yes':
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_covid]).where(missions_covid.c.Flag == 'Pending')).fetchall()
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    results = connection.execute(db.select([missions_covid]).where(missions_covid.c.Flag == 'Pending')).fetchall()
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+        if len(results) == 0:
+            return jsonify({'Service':False})
+        df = pd.DataFrame(results)
+        df.columns = results[0].keys()
+        lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+
+        id_tienda_salida = data['Id_Store']
+        if id_tienda_salida not in ids:
+            return jsonify({'Service':False})
+
+        status = data['Status']
+        user_id = data['User_Id']
+        user_lat = data['User_Latitude']
+        user_lng = data['User_Longitude']
+        url_p = data['Url_Photo']
+        url_v = data['Url_Video']
+        miss_id = data['Mission_Id']
+
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(missions_covid.update().where(missions_covid.c.Id == id_tienda_salida).values(Flag = status,
+                    Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
+                    Url_Video = url_v, Mission_Id = miss_id))
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    connection.execute(missions_covid.update().where(missions_covid.c.Id == id_tienda_salida).values(Flag = status,
+                        Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
+                        Url_Video = url_v, Mission_Id = miss_id))
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+
+        
+        return jsonify({'Service':True})
+
+    elif bandera != None:
+        print('Error de request')
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+        return jsonify(json_respuesta)
+    else:
+        pass
+
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_covid]).where(missions_covid.c.Flag != 'Yes')).fetchall()
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_covid]).where(missions_covid.c.Flag != 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+            return jsonify(json_respuesta)
+    if len(results) == 0:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+        return jsonify(json_respuesta)
+    df = pd.DataFrame(results)
+    df.columns = results[0].keys()
+    lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+    user_pos = (data['Location_latitude'],data['Location_longitude']) 
+    
+
+    image_path = data['url']
+    distancias = []
+    for t, g in zip(lat,lng):
+        distancias.append(geodesic(user_pos,(t,g)).meters)
+    if min(distancias) < 500:
+        
+        start_date = datetime.strptime(data['Start_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        end_date = datetime.strptime(data['End_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        user_time = (end_date - start_date).total_seconds()
+        mission_target_time = data['Target_time_mission']
+
+        if (user_time<=mission_target_time):
+            if liveness(image_path):
+                j = np.argmin(distancias)
+                direc = address[j]
+                id_tienda = ids[j]
+                try:
+                    with engine_misions.connect() as connection:
+                        connection.execute(missions_covid.update().where(missions_covid.c.Address == direc).values(Flag = 'Pending'))
+                except Exception as e:
+                    print(e)
+                    try:
+                        with engine_misions.connect() as connection:
+                            connection.execute(missions_covid.update().where(missions_covid.c.Address == direc).values(Flag = 'Pending'))
+                    except Exception as e:
+                        print(e)
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+                        return jsonify(json_respuesta)
+                
+                try:
+                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
+
+                    payload = {'id_tienda':id_tienda,'message':body_covid,'service':from_service,'subject':'COVID - NUEVA MISION'}
+                    headers = {'Content-Type': 'application/json'}
+
+                    response = requests.request("POST", url, headers=headers, data = payload)
+                except Exception as e:
+                    print(e)
+                    pass
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda}
+                return jsonify(json_respuesta)
+            else:
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0}
+                return jsonify(json_respuesta)
+        else:
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
+            return jsonify(json_respuesta)
+    else:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
+        return jsonify(json_respuesta)
+
+
 @app.after_request
 def mysql_con(response):
     #Query a Cloud SQL
+    if from_service == 'Taifelds':
+
+        if bandera == None:
+            try:
+                with engine.connect() as connection:
+                    data_a_cloud_sql = [{'From Service':'Taifelds','Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                                        'User Id':data['id'],'User Name':data['name'],
+                                        'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
+                                        'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
+                                        'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
+                                        'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
+                                        'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
+                                        'URL':data['url'],'Text':data['text'],
+                                        'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
+                                        'Porn':json_respuesta['Porn'],
+                                        'Live':json_respuesta['Live'],
+                                        'Service':json_respuesta['Service']}]
+                    query_cloud = db.insert(result_data)
+                    ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
+            except Exception as e:
+                print(e)
+                
+                try:
+                    with engine.connect() as connection:
+                        data_a_cloud_sql = [{'From Service':'Taifelds','Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                                            'User Id':data['id'],'User Name':data['name'],
+                                            'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
+                                            'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
+                                            'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
+                                            'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
+                                            'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
+                                            'URL':data['url'],'Text':data['text'],
+                                            'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
+                                            'Porn':json_respuesta['Porn'],
+                                            'Live':json_respuesta['Live'],
+                                            'Service':json_respuesta['Service']}]
+                        query_cloud = db.insert(result_data)
+                        ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
+                        print('Se logró')
+                except Exception as e:
+                    print(e)
+                    print('Otra vez...')
+                    pass
+
+        else:
+            pass
+        
+        return response
+
+    elif from_service == 'Covid':
+
+        if bandera == None:
+            try:
+                with engine.connect() as connection:
+                    data_a_cloud_sql = [{'From Service':'Covid','Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                                        'User Id':data['id'],'User Name':data['name'],
+                                        'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
+                                        'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
+                                        'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
+                                        'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
+                                        'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
+                                        'URL':data['url'],'Text':data['text'],
+                                        'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
+                                        'Porn':json_respuesta['Porn'],
+                                        'Live':json_respuesta['Live'],
+                                        'Service':json_respuesta['Service']}]
+                    query_cloud = db.insert(result_data)
+                    ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
+            except Exception as e:
+                print(e)
+
+                try:
+                    with engine.connect() as connection:
+                        data_a_cloud_sql = [{'From Service':'Covid','Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                                            'User Id':data['id'],'User Name':data['name'],
+                                            'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
+                                            'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
+                                            'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
+                                            'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
+                                            'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
+                                            'URL':data['url'],'Text':data['text'],
+                                            'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
+                                            'Porn':json_respuesta['Porn'],
+                                            'Live':json_respuesta['Live'],
+                                            'Service':json_respuesta['Service']}]
+                        query_cloud = db.insert(result_data)
+                        ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
+                        print('Se logró')
+                except Exception as e:
+                    print(e)
+                    print('Otra vez...')
+                    pass
+
+        else:
+            pass
+        
+        return response
+
     try:
         with engine.connect() as connection:
             data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
