@@ -25,6 +25,7 @@ import cv2
 import os
 import sys
 import dlib
+import json
 import pandas as pd
 import face_recognition
 import sqlalchemy as db
@@ -1675,7 +1676,7 @@ def taifelds_service():
                     payload = {'id_tienda':id_tienda,'message':body_taifelds,'service':from_service,'subject':'Taifelds - NUEVA MISION'}
                     headers = {'Content-Type': 'application/json'}
 
-                    response = requests.request("POST", url, headers=headers, data = payload)
+                    response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
 
                 except Exception as e:
                     print(e)
@@ -1819,7 +1820,7 @@ def covid_service():
                     payload = {'id_tienda':id_tienda,'message':body_covid,'service':from_service,'subject':'COVID - NUEVA MISION'}
                     headers = {'Content-Type': 'application/json'}
 
-                    response = requests.request("POST", url, headers=headers, data = payload)
+                    response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
                 except Exception as e:
                     print(e)
                     pass
