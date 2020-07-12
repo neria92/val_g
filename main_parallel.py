@@ -3,7 +3,7 @@ from imageai.Prediction.Custom import CustomImagePrediction
 from imutils.object_detection import non_max_suppression
 from tensorflow.keras.preprocessing import image as ig
 from tensorflow.keras.models import load_model
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from multiprocessing import Process
 from geopy.distance import geodesic
 from datetime import datetime, timedelta
@@ -1835,6 +1835,10 @@ def covid_service():
     else:
         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
         return jsonify(json_respuesta)
+
+@app.route('/taifelds-map', methods=['GET'])
+def taifelds_map():
+    return render_template('index.html')
 
 
 @app.after_request
