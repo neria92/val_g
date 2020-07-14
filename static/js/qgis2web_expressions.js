@@ -754,30 +754,3 @@ function fnc__specialcol_(values, context) {
 function fnc_project_color(values, context) {
     return false;
 };
-
-
-
-function exp_Tiendas_5rule0_eval_expression(context) {
-    // Cumplida = 'No'
-
-    var feature = context.feature;
-    
-    if (feature.properties) {
-        return (feature.properties['Cumplida']  == 'No');
-    } else {
-        return (feature['Cumplida']  == 'No');
-    }
-}
-
-
-function exp_Tiendas_5rule1_eval_expression(context) {
-    // Cumplida = 'Si'
-
-    var feature = context.feature;
-    
-    if (feature.properties) {
-        return (feature.properties['Cumplida']  == 'Si');
-    } else {
-        return (feature['Cumplida']  == 'Si');
-    }
-}
