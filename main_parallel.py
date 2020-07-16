@@ -26,6 +26,7 @@ import os
 import sys
 import dlib
 import json
+import ffmpeg
 import pandas as pd
 import face_recognition
 import sqlalchemy as db
@@ -42,6 +43,7 @@ from scipy.spatial.distance import euclidean, pdist, squareform
 from google.cloud import storage
 from werkzeug.utils import secure_filename
 import yagmail
+from exif import Image as exif_image
 
 user = os.environ.get("DB_USER")
 password = os.environ.get("DB_PASS")
@@ -488,10 +490,11 @@ def load_image_file_0(file, mode='RGB'):
         im = im.convert(mode)
     im = np.array(im)
     al, an, ca = im.shape
-    if al > an:
-        im = cv2.resize(im,(700,1400))
-    else:
-        im = cv2.resize(im,(1400,700))
+    if al > 1400 or an > 1400:
+        if al > an:
+            im = cv2.resize(im,(700,1400))
+        else:
+            im = cv2.resize(im,(1400,700))
     return im
 
 def load_image_file_270(file, mode='RGB'):
@@ -508,10 +511,11 @@ def load_image_file_270(file, mode='RGB'):
         im = im.convert(mode)
     im = np.array(im)
     al, an, ca = im.shape
-    if al > an:
-        im = cv2.resize(im,(700,1400))
-    else:
-        im = cv2.resize(im,(1400,700))
+    if al > 1400 or an > 1400:
+        if al > an:
+            im = cv2.resize(im,(700,1400))
+        else:
+            im = cv2.resize(im,(1400,700))
     return im
 
 def load_image_file_180(file, mode='RGB'):
@@ -528,10 +532,11 @@ def load_image_file_180(file, mode='RGB'):
         im = im.convert(mode)
     im = np.array(im)
     al, an, ca = im.shape
-    if al > an:
-        im = cv2.resize(im,(700,1400))
-    else:
-        im = cv2.resize(im,(1400,700))
+    if al > 1400 or an > 1400:
+        if al > an:
+            im = cv2.resize(im,(700,1400))
+        else:
+            im = cv2.resize(im,(1400,700))
     return im
 
 def load_image_file_90(file, mode='RGB'):
@@ -548,11 +553,90 @@ def load_image_file_90(file, mode='RGB'):
         im = im.convert(mode)
     im = np.array(im)
     al, an, ca = im.shape
-    if al > an:
-        im = cv2.resize(im,(700,1400))
-    else:
-        im = cv2.resize(im,(1400,700))
+    if al > 1400 or an > 1400:
+        if al > an:
+            im = cv2.resize(im,(700,1400))
+        else:
+            im = cv2.resize(im,(1400,700))
     return im
+
+def orientation_fix_function(image_path):
+  orientation_fix_functions_dict = {1:load_image_file_0,2:load_image_file_0,
+                3:load_image_file_180,4:load_image_file_180,
+                5:load_image_file_270,6:load_image_file_270,
+                7:load_image_file_90,8:load_image_file_90}
+  try:
+    image = url_to_image(image_path)
+    with open(image, 'rb') as image_file:
+        my_image = exif_image(image_file)
+        if my_image.has_exif:
+          image = orientation_fix_functions_dict[my_image.orientation.value](image)
+          plt.imsave('orientation_fixed_image.jpg',image)
+          return upload_image_file('orientation_fixed_image.jpg')
+        else:
+          return image_path
+  except Exception as e:
+    print(e)
+    return image_path
+
+def check_rotation(path_video_file):
+    # this returns meta-data of the video file in form of a dictionary
+    try:
+      meta_dict = ffmpeg.probe(path_video_file)
+    except Exception:
+      meta_dict = {'streams':[{'tags':{'rotate':0}}]}
+  
+    # from the dictionary, meta_dict['streams'][0]['tags']['rotate'] is the key
+    # we are looking for
+    rotateCode = None
+    try:
+      if int(meta_dict['streams'][0]['tags']['rotate']) == 90:
+          rotateCode = cv2.ROTATE_90_CLOCKWISE
+      elif int(meta_dict['streams'][0]['tags']['rotate']) == 180:
+          rotateCode = cv2.ROTATE_180
+      elif int(meta_dict['streams'][0]['tags']['rotate']) == 270:
+          rotateCode = cv2.ROTATE_90_COUNTERCLOCKWISE
+    except Exception:
+      pass
+    return rotateCode
+    
+def correct_rotation(frame, rotateCode):  
+    return cv2.rotate(frame, rotateCode) 
+
+def video_to_thumbnail_url(video_path,threshold=50,threshold2=200,thumb_width=400,thumb_height=600,limit=5):
+  if video_path == '':
+    return ''
+  try:
+    urllib.request.urlretrieve(video_path,'gotchu_video.mp4')
+  except Exception:
+    return ''
+  video_path = 'gotchu_video.mp4'
+  # check if video requires rotation
+  rotateCode = check_rotation(video_path)
+
+  vcap = cv2.VideoCapture(video_path)
+  response, image = vcap.read()
+  i = 0
+  while (image.mean() < threshold or image.mean() > threshold2) and response and i < limit:
+    i += 1
+    response, image = vcap.read()
+
+  if rotateCode is not None:
+    image = correct_rotation(image, rotateCode)
+
+  al, an, ca = image.shape
+  if al > an:
+    image = cv2.resize(image, (thumb_width, thumb_height), 0, 0, cv2.INTER_LINEAR)
+  if an > al:
+    image = cv2.resize(image, (thumb_height, thumb_width), 0, 0, cv2.INTER_LINEAR)
+
+  background = image
+  overlay = cv2.imread('images/play.png')
+  overlay = cv2.resize(overlay, (background.shape[1], background.shape[0]), 0, 0, cv2.INTER_LINEAR)
+  added_image = cv2.addWeighted(background,0.6,overlay,0.2,0)
+
+  cv2.imwrite('thumbnail.jpg', added_image)
+  return upload_image_file('thumbnail.jpg')
 
 def detect_objects(image_path,validar,names,labels):
     if validar in names:
@@ -638,10 +722,10 @@ def detect_objects(image_path,validar,names,labels):
 
 def masked_face(image,end=False):
     if end:
-        return####DEV
+        #return####DEV
         image = face_recognition.load_image_file(image)
-    return False####DEV
-    faces = face_recognition.face_locations(image,model='cnn')
+    #return False####DEV
+    faces = face_recognition.face_locations(image,2)
 
     marks_list = {'images/00.png':[1.6,405,105,160,1,60],'images/01.png':[1.6,405,105,160,1,60],'images/02.png':[1.6,405,105,160,1,60],#indice 5 es la punta izquiera del sombrero
                       'images/03.png':[1.6,405,105,160,1,60],'images/04.png':[1.6,405,105,160,1,60],'images/05.png':[1.6,405,105,160,1,60],
@@ -857,20 +941,11 @@ def detect_human(image_path,validar,extras):
         if face_landmarks_list == []:
             if masked_face(image):
                 return
-            image = load_image_file_270(image_origin)
-            face_landmarks_list = face_recognition.face_landmarks(image)
-            if face_landmarks_list == []:
-                if masked_face(image):
-                    return
-                image = load_image_file_90(image_origin)
-                face_landmarks_list = face_recognition.face_landmarks(image)
-                if face_landmarks_list == []:
-                    if masked_face(image):
-                        return
-                    url2json = data['url']
-                    Service[2] = False
-                    masked_url[0] = url2json
-                    return
+            
+            url2json = data['url']
+            Service[2] = False
+            masked_url[0] = url2json
+            return
 
         face = image
 
@@ -1128,6 +1203,7 @@ def location_time_validate():
     global url2json0
 
     data = request.json
+    data['url'] = orientation_fix_function(data['url'])
     url2json0 = ['']
     masked_url = [data['url']]
     det = 'na'
@@ -1178,6 +1254,9 @@ def location_time_validate():
                 
             if final_text:
                 image_path = data['url']
+                if image_path == '':
+                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                    return jsonify(json_respuesta)
                 response = requests.get(image_path)
                 img = Image.open(BytesIO(response.content))
                                 
@@ -1426,6 +1505,7 @@ def contenido_explicito():
     global url2json0
 
     data = request.json
+    data['url'] = orientation_fix_function(data['url'])
     validar1 = 'none'
     validar2 = 'none'
     validar3 = 'none'
@@ -1560,6 +1640,7 @@ def taifelds_service():
     from_service = 'Taifelds'
 
     data = request.json
+    data['url'] = orientation_fix_function(data['url'])
     bandera = request.args.get('re_data')
 
     if bandera == 'yes':
@@ -1704,6 +1785,7 @@ def covid_service():
     from_service = 'Covid'
 
     data = request.json
+    data['url'] = orientation_fix_function(data['url'])
     bandera = request.args.get('re_data')
 
     if bandera == 'yes':
@@ -1838,6 +1920,8 @@ def covid_service():
 
 @app.route('/taifelds-map', methods=['GET'])
 def taifelds_map():
+    global from_service
+    from_service = 'get'
     return render_template('index.html')
 
 
@@ -1941,27 +2025,7 @@ def mysql_con(response):
             pass
         
         return response
-
-    try:
-        with engine.connect() as connection:
-            data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
-                                'User Id':data['id'],'User Name':data['name'],
-                                'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
-                                'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
-                                'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
-                                'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
-                                'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
-                                'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':json_respuesta['Url_themask'],'Text':data['text'],
-                                'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
-                                'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
-                                'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
-                                'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
-                                'Object':obj,'Service':json_respuesta['Service']}]
-            query_cloud = db.insert(result_data)
-            ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
-    except Exception as e:
-        print(e)
-
+    elif from_service == 'premier' or from_service == 'Re:Explicit' or from_service == 'Explicit' or from_service == 'face recognition':
         try:
             with engine.connect() as connection:
                 data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
@@ -1979,13 +2043,36 @@ def mysql_con(response):
                                     'Object':obj,'Service':json_respuesta['Service']}]
                 query_cloud = db.insert(result_data)
                 ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
-                print('Se logró')
         except Exception as e:
             print(e)
-            print('Otra vez...')
-            pass
 
-    return response
+            try:
+                with engine.connect() as connection:
+                    data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                                        'User Id':data['id'],'User Name':data['name'],
+                                        'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
+                                        'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
+                                        'Mission Latitude':data['Location_mission_latitude'],'Mission Longitude':data['Location_mission_longitude'],
+                                        'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
+                                        'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
+                                        'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':json_respuesta['Url_themask'],'Text':data['text'],
+                                        'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
+                                        'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
+                                        'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
+                                        'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
+                                        'Object':obj,'Service':json_respuesta['Service']}]
+                    query_cloud = db.insert(result_data)
+                    ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
+                    print('Se logró')
+            except Exception as e:
+                print(e)
+                print('Otra vez...')
+                pass
+
+        return response
+
+    else:
+        return response
         
 if __name__ == '__main__':
     
