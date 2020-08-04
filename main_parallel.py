@@ -59,6 +59,7 @@ app = Flask(__name__)
 engine = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database}?unix_socket=/cloudsql/{cloud_sql_connection_name}')
 engine_misions = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database_misions}?unix_socket=/cloudsql/{cloud_sql_connection_name}')
 
+
 @app.before_first_request
 def loadmodel():
     global Service
@@ -98,6 +99,8 @@ def loadmodel():
                 db.Column('URL', db.TEXT),
                 db.Column('URL Primaria', db.TEXT),
                 db.Column('URL Selfie', db.TEXT),
+                db.Column('URL Video', db.TEXT),
+                db.Column('URL Thumbnail (Video)', db.TEXT),
                 db.Column('Text', db.TEXT),
                 db.Column('Target_Scene',db.String(255)),
                 db.Column('Target_Extra',db.String(255)),
@@ -216,7 +219,6 @@ def loadmodel():
                  detection_scores,detection_classes,num_detections,
                  CATEGORY_INDEX,MINIMUM_CONFIDENCE,model_incres,
                  detector,prediction,porn_model,yolo_model,Service,screen_model]
-
 
 def url_to_image2(url):
 	"""download the image, convert it to a NumPy array, and then read
@@ -576,7 +578,6 @@ def orientation_fix_function(image_path):
         else:
           return image_path
   except Exception as e:
-    print(e)
     return image_path
 
 def check_rotation(path_video_file):
@@ -625,13 +626,14 @@ def video_to_thumbnail_url(video_path,threshold=50,threshold2=200,thumb_width=40
     image = correct_rotation(image, rotateCode)
 
   al, an, ca = image.shape
-  if al > an:
+  if al >= an:
     image = cv2.resize(image, (thumb_width, thumb_height), 0, 0, cv2.INTER_LINEAR)
+    overlay = cv2.imread('images/play_r.png')
   if an > al:
     image = cv2.resize(image, (thumb_height, thumb_width), 0, 0, cv2.INTER_LINEAR)
+    overlay = cv2.imread('images/play_ra.png')
 
   background = image
-  overlay = cv2.imread('images/play.png')
   overlay = cv2.resize(overlay, (background.shape[1], background.shape[0]), 0, 0, cv2.INTER_LINEAR)
   added_image = cv2.addWeighted(background,0.6,overlay,0.2,0)
 
@@ -1201,9 +1203,15 @@ def location_time_validate():
     global detected_obj
     global masked_url
     global url2json0
+    global video_path
 
     data = request.json
     data['url'] = orientation_fix_function(data['url'])
+    try:
+        video_path = data['Url_Video']
+    except KeyError as e:
+        video_path = ''
+        print(e)
     url2json0 = ['']
     masked_url = [data['url']]
     det = 'na'
@@ -1254,8 +1262,15 @@ def location_time_validate():
                 
             if final_text:
                 image_path = data['url']
-                if image_path == '':
-                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                if image_path == '' or image_path == 'None' or image_path == None:
+                    validar1 = 'na'
+                    validar2 = 'na'
+                    validar3 = 'na'
+                    validar4 = 'na'
+                    validar5 = 'na'
+                    validar6 = 'na'
+                    Service = [False,False,False,True]
+                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':'','url_thumbnail':video_to_thumbnail_url(video_path)}
                     return jsonify(json_respuesta)
                 response = requests.get(image_path)
                 img = Image.open(BytesIO(response.content))
@@ -1334,12 +1349,12 @@ def location_time_validate():
                     if face_rec == True:
                         Service = [False,False,False,False]
                         from_service = 'face recognition'
-                        json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False}
+                        json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':'','url_thumbnail':video_to_thumbnail_url(video_path)}
                         return jsonify(json_respuesta)
                     else:
                         Service = [False,False,False,False]
                         from_service = 'face recognition'
-                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False}
+                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':video_to_thumbnail_url(video_path)}
                         return jsonify(json_respuesta)
                 else:
                     pass
@@ -1389,25 +1404,25 @@ def location_time_validate():
                                             p2.terminate
                                             
                                             if False in Service:
-                                                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
+                                                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':''}
                                                 return jsonify(json_respuesta)
                                                 
                                             else:
                                                 det, detected_obj = detect_objects(image_path,validar5,objects,labels)
                                                 obj = det == validar5 or det in ppoliticos
-                                                json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':imagen_final(masked_url[0])}
+                                                json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path)}
                                                 return jsonify(json_respuesta)
 
                                         else:
-                                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
+                                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':''}
                                             return jsonify(json_respuesta)
 
                                     else:
-                                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
+                                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':''}
                                         return jsonify(json_respuesta)
 
                                 else:
-                                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
+                                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':''}
                                     return jsonify(json_respuesta)
 
                                 
@@ -1415,7 +1430,7 @@ def location_time_validate():
                                 det, detected_obj = detect_objects(image_path,validar2,objects,labels)
                                 if det == validar2 or det in ppoliticos:
                                     obj = True
-                                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':imagen_final(masked_url[0])}
+                                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path)}
                                     return jsonify(json_respuesta)
                                 else:
                                     if validar4 in class_names or validar4 == 'na':
@@ -1440,49 +1455,49 @@ def location_time_validate():
                                                 p2.terminate
                                                 
                                                 if False in Service:
-                                                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':''}
+                                                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':''}
                                                     return jsonify(json_respuesta)
                                                 
                                                 else:
                                                     det, detected_obj = detect_objects(image_path,validar5,objects,labels)
                                                     obj = det == validar5 or det in ppoliticos
-                                                    json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':imagen_final(masked_url[0])}
+                                                    json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path)}
                                                     return jsonify(json_respuesta)
 
                                             else:
-                                                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                                                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
                                                 return jsonify(json_respuesta)
 
                                         else:
-                                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
                                             return jsonify(json_respuesta)
 
                                     else:
-                                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
                                         return jsonify(json_respuesta)
         
                         else:
-                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                            json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
                             return jsonify(json_respuesta)                            
                             
                     else:
-                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
                         return jsonify(json_respuesta)
 
                 else:
-                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
                     return jsonify(json_respuesta)
             
             else:
-                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
                 return jsonify(json_respuesta)
                              
         else:
-            json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':False,'Url_themask':''}
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
             return jsonify(json_respuesta)
        
     else:
-        json_respuesta = {'Location':False,'Time':True,'Service':False,'Porn':False,'Url_themask':''}
+        json_respuesta = {'Location':False,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
 
 @app.route('/explicit', methods=['POST'])
@@ -1503,9 +1518,13 @@ def contenido_explicito():
     global detected_obj
     global masked_url
     global url2json0
+    global video_path
 
     data = request.json
     data['url'] = orientation_fix_function(data['url'])
+    re_explicit = request.args.get('re')
+    if re_explicit != 'true':
+        data['url2'] = orientation_fix_function(data['url2'])
     validar1 = 'none'
     validar2 = 'none'
     validar3 = 'none'
@@ -1541,9 +1560,13 @@ def contenido_explicito():
         time = False
         loc = False
 
-    re_explicit = request.args.get('re')
     if re_explicit == 'true':
         from_service = 'Re:Explicit'
+        try:
+            video_path = data['Url_Video']
+        except KeyError as e:
+            video_path = ''
+            print(e)
         latitud_usuario = data['Location_latitude']
         longitud_usuario = data['Location_longitude']
         latitud_mision = data['Location_mission_latitude']
@@ -1553,6 +1576,7 @@ def contenido_explicito():
         fecha_final = data['End_Date_mission']
         duracion = data['Target_time_mission']
     else:
+        video_path = ''
         latitud_usuario = 0
         longitud_usuario = 0
         latitud_mision = 0
@@ -1607,7 +1631,7 @@ def contenido_explicito():
                         p2.terminate
                         p3.terminate
                                         
-                if data['url2'] != '':
+                if  not re_explicit == 'true' and data['url2'] != '':
                     image_path2 = data['url2']
                     p1 = Process(target=porn_explicit(image_path2,1))
                     p1.start()
@@ -1615,19 +1639,19 @@ def contenido_explicito():
                     p1.terminate
                         
                 if True in Service:
-                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
+                    json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':'','url_thumbnail':''}
                     return jsonify(json_respuesta)
                 else:
-                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':imagen_final(masked_url[0])}
+                    json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path)}
                     return jsonify(json_respuesta)
             else:
-                json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
+                json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':'','url_thumbnail':''}
                 return jsonify(json_respuesta)
         else:
-            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':'','url_thumbnail':''}
             return jsonify(json_respuesta)
     else:
-        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':''}
+        json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
 
 @app.route('/taifelds', methods=['POST'])
@@ -1636,12 +1660,16 @@ def taifelds_service():
     global json_respuesta
     global bandera
     global from_service
+    global video_path
 
     from_service = 'Taifelds'
 
     data = request.json
-    data['url'] = orientation_fix_function(data['url'])
     bandera = request.args.get('re_data')
+    video_path = ''
+
+    if bandera != 'yes':
+        data['url'] = orientation_fix_function(data['url'])
 
     if bandera == 'yes':
         try:
@@ -1671,6 +1699,7 @@ def taifelds_service():
         user_lng = data['User_Longitude']
         url_p = data['Url_Photo']
         url_v = data['Url_Video']
+        video_path = data['Url_Video']
         miss_id = data['Mission_Id']
 
         try:
@@ -1696,7 +1725,7 @@ def taifelds_service():
 
     elif bandera != None:
         print('Error de request')
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
     else:
         pass
@@ -1711,10 +1740,10 @@ def taifelds_service():
                 results = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag != 'Yes')).fetchall()
         except Exception as e:
             print(e)
-            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
             return jsonify(json_respuesta)
     if len(results) == 0:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
     df = pd.DataFrame(results)
     df.columns = results[0].keys()
@@ -1722,6 +1751,11 @@ def taifelds_service():
     user_pos = (data['Location_latitude'],data['Location_longitude']) 
     
     image_path = data['url']
+    try:
+        video_path = data['Url_Video']
+    except KeyError as e:
+        video_path = ''
+        print(e)
     distancias = []
     for t, g in zip(lat,lng):
         distancias.append(geodesic(user_pos,(t,g)).meters)
@@ -1737,6 +1771,8 @@ def taifelds_service():
                 j = np.argmin(distancias)
                 direc = address[j]
                 id_tienda = ids[j]
+                data['Location_mission_latitude'] = lat[j]
+                data['Location_mission_longitude'] = lng[j]
                 try:
                     with engine_misions.connect() as connection:
                         connection.execute(missions_taifelds.update().where(missions_taifelds.c.Address == direc).values(Flag = 'Pending'))
@@ -1747,7 +1783,7 @@ def taifelds_service():
                             connection.execute(missions_taifelds.update().where(missions_taifelds.c.Address == direc).values(Flag = 'Pending'))
                     except Exception as e:
                         print(e)
-                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
                         return jsonify(json_respuesta)
                 
                 try:
@@ -1762,17 +1798,17 @@ def taifelds_service():
                 except Exception as e:
                     print(e)
                     pass
-                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda}
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path)}
                 return jsonify(json_respuesta)
 
             else:
-                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0}
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
                 return jsonify(json_respuesta)
         else:
-            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
             return jsonify(json_respuesta)
     else:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
 
 @app.route('/covid', methods=['POST'])
@@ -1781,12 +1817,16 @@ def covid_service():
     global json_respuesta
     global bandera
     global from_service
+    global video_path
 
     from_service = 'Covid'
 
     data = request.json
-    data['url'] = orientation_fix_function(data['url'])
     bandera = request.args.get('re_data')
+    video_path = ''
+
+    if bandera != 'yes':
+        data['url'] = orientation_fix_function(data['url'])
 
     if bandera == 'yes':
         try:
@@ -1816,6 +1856,7 @@ def covid_service():
         user_lng = data['User_Longitude']
         url_p = data['Url_Photo']
         url_v = data['Url_Video']
+        video_path = data['Url_Video']
         miss_id = data['Mission_Id']
 
         try:
@@ -1841,7 +1882,7 @@ def covid_service():
 
     elif bandera != None:
         print('Error de request')
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'url_thumbnail':''}
         return jsonify(json_respuesta)
     else:
         pass
@@ -1856,10 +1897,10 @@ def covid_service():
                 results = connection.execute(db.select([missions_covid]).where(missions_covid.c.Flag != 'Yes')).fetchall()
         except Exception as e:
             print(e)
-            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'url_thumbnail':''}
             return jsonify(json_respuesta)
     if len(results) == 0:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'url_thumbnail':''}
         return jsonify(json_respuesta)
     df = pd.DataFrame(results)
     df.columns = results[0].keys()
@@ -1883,6 +1924,8 @@ def covid_service():
                 j = np.argmin(distancias)
                 direc = address[j]
                 id_tienda = ids[j]
+                data['Location_mission_latitude'] = lat[j]
+                data['Location_mission_longitude'] = lng[j]
                 try:
                     with engine_misions.connect() as connection:
                         connection.execute(missions_covid.update().where(missions_covid.c.Address == direc).values(Flag = 'Pending'))
@@ -1893,7 +1936,7 @@ def covid_service():
                             connection.execute(missions_covid.update().where(missions_covid.c.Address == direc).values(Flag = 'Pending'))
                     except Exception as e:
                         print(e)
-                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0}
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'url_thumbnail':''}
                         return jsonify(json_respuesta)
                 
                 try:
@@ -1906,16 +1949,16 @@ def covid_service():
                 except Exception as e:
                     print(e)
                     pass
-                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda}
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda,'url_thumbnail':video_to_thumbnail_url(video_path)}
                 return jsonify(json_respuesta)
             else:
-                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0}
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'url_thumbnail':''}
                 return jsonify(json_respuesta)
         else:
-            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0,'url_thumbnail':''}
             return jsonify(json_respuesta)
     else:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0,'url_thumbnail':''}
         return jsonify(json_respuesta)
 
 @app.route('/taifelds-map', methods=['GET'])
@@ -1941,6 +1984,7 @@ def mysql_con(response):
                                         'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                                         'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
                                         'URL':data['url'],'Text':data['text'],
+                                        'URL Video':data['Url_Video'],'URL Thumbnail (Video)':json_respuesta['url_thumbnail'],
                                         'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                         'Porn':json_respuesta['Porn'],
                                         'Live':json_respuesta['Live'],
@@ -1960,6 +2004,7 @@ def mysql_con(response):
                                             'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                                             'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
                                             'URL':data['url'],'Text':data['text'],
+                                            'URL Video':data['Url_Video'],'URL Thumbnail (Video)':json_respuesta['url_thumbnail'],
                                             'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                             'Porn':json_respuesta['Porn'],
                                             'Live':json_respuesta['Live'],
@@ -1990,6 +2035,7 @@ def mysql_con(response):
                                         'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                                         'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
                                         'URL':data['url'],'Text':data['text'],
+                                        'URL Video':data['Url_Video'],'URL Thumbnail (Video)':json_respuesta['url_thumbnail'],
                                         'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                         'Porn':json_respuesta['Porn'],
                                         'Live':json_respuesta['Live'],
@@ -2009,6 +2055,7 @@ def mysql_con(response):
                                             'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                                             'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
                                             'URL':data['url'],'Text':data['text'],
+                                            'URL Video':data['Url_Video'],'URL Thumbnail (Video)':json_respuesta['url_thumbnail'],
                                             'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                             'Porn':json_respuesta['Porn'],
                                             'Live':json_respuesta['Live'],
@@ -2025,6 +2072,7 @@ def mysql_con(response):
             pass
         
         return response
+        
     elif from_service == 'premier' or from_service == 'Re:Explicit' or from_service == 'Explicit' or from_service == 'face recognition':
         try:
             with engine.connect() as connection:
@@ -2036,6 +2084,7 @@ def mysql_con(response):
                                     'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                                     'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
                                     'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':json_respuesta['Url_themask'],'Text':data['text'],
+                                    'URL Video':video_path,'URL Thumbnail (Video)':json_respuesta['url_thumbnail'],
                                     'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
                                     'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                                     'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
@@ -2056,6 +2105,7 @@ def mysql_con(response):
                                         'Start Date Mission':data['Start_Date_mission'],'End Date Mission':data['End_Date_mission'],
                                         'Target Time':data['Target_time_mission'],'Radio':data['Location_mission_radio'],
                                         'URL':data['url'],'URL Primaria':url2json0[0],'URL Selfie':json_respuesta['Url_themask'],'Text':data['text'],
+                                        'URL Video':video_path,'URL Thumbnail (Video)':json_respuesta['url_thumbnail'],
                                         'Target_Scene':validar1 + ' o ' + validar4,'Target_Extra':validar3 + ' o ' + validar6,
                                         'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                                         'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
