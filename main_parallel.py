@@ -1,4 +1,17 @@
 #Manuel Neria #Push #NovatestGCP
+#LICENCES
+
+# PlacesCNN to predict the scene category, attribute, and class activation map in a single pass
+# by Bolei Zhou, sep 2, 2017
+
+""" @article{zhou2017places,
+   title={Places: A 10 million Image Database for Scene Recognition},
+   author={Zhou, Bolei and Lapedriza, Agata and Khosla, Aditya and Oliva, Aude and Torralba, Antonio},
+   journal={IEEE Transactions on Pattern Analysis and Machine Intelligence},
+   year={2017},
+   publisher={IEEE}
+ }"""
+
 from imageai.Prediction.Custom import CustomImagePrediction
 from imutils.object_detection import non_max_suppression
 from tensorflow.keras.preprocessing import image as ig
@@ -44,6 +57,11 @@ from google.cloud import storage
 from werkzeug.utils import secure_filename
 import yagmail
 from exif import Image as exif_image
+import torch
+from torch.autograd import Variable as V
+import torchvision.models as models
+from torchvision import transforms as trn
+from torch.nn import functional as F
 
 user = os.environ.get("DB_USER")
 password = os.environ.get("DB_PASS")
@@ -60,12 +78,88 @@ engine = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database}?unix_s
 engine_misions = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database_misions}?unix_socket=/cloudsql/{cloud_sql_connection_name}')
 
 
+# hacky way to deal with the Pytorch 1.0 update
+def recursion_change_bn(module):
+    if isinstance(module, torch.nn.BatchNorm2d):
+        module.track_running_stats = 1
+    else:
+        for i, (name, module1) in enumerate(module._modules.items()):
+            module1 = recursion_change_bn(module1)
+    return module
+
+def load_labels():
+    # prepare all the labels
+    # scene category relevant
+    file_name_category = 'Utils/categories_places365.txt'
+    classes = []
+    with open(file_name_category) as class_file:
+        for line in class_file:
+            classes.append(line.strip().split(' ')[0][3:])
+    classes = tuple(classes)
+
+    # indoor and outdoor relevant
+    file_name_IO = 'Utils/IO_places365.txt'
+    with open(file_name_IO) as f:
+        lines = f.readlines()
+        labels_IO = []
+        for line in lines:
+            items = line.rstrip().split()
+            labels_IO.append(int(items[-1]) -1) # 0 is indoor, 1 is outdoor
+    labels_IO = np.array(labels_IO)
+
+    # scene attribute relevant
+    file_name_attribute = 'Utils/labels_sunattribute.txt'
+    with open(file_name_attribute) as f:
+        lines = f.readlines()
+        labels_attribute = [item.rstrip() for item in lines]
+    file_name_W = 'Utils/W_sceneattribute_wideresnet18.npy'
+    W_attribute = np.load(file_name_W)
+
+    return classes, labels_IO, labels_attribute, W_attribute
+
+def hook_feature(module, input, output):
+    features_blobs.append(np.squeeze(output.data.cpu().numpy()))
+
+def returnTF():
+    # load the image transformer
+    transfmr = trn.Compose([
+        trn.Resize((224,224)),
+        trn.ToTensor(),
+        trn.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+    return transfmr
+
+def load_scene_model():
+    # this model has a last conv feature map as 14x14
+
+    model_file = 'Utils/wideresnet18_places365.pth.tar'
+
+    import Utils.wideresnet as wideresnet
+    model = wideresnet.resnet18(num_classes=365)
+    checkpoint = torch.load(model_file, map_location=lambda storage, loc: storage)
+    state_dict = {str.replace(k,'module.',''): v for k,v in checkpoint['state_dict'].items()}
+    model.load_state_dict(state_dict)
+    
+    # hacky way to deal with the upgraded batchnorm2D and avgpool layers...
+    for i, (name, module) in enumerate(model._modules.items()):
+        module = recursion_change_bn(model)
+    model.avgpool = torch.nn.AvgPool2d(kernel_size=14, stride=1, padding=0)
+    
+    model.eval()
+
+    # hook the feature extractor
+    features_names = ['layer4','avgpool'] # this is the last conv layer of the resnet
+    for name in features_names:
+        model._modules.get(name).register_forward_hook(hook_feature)
+    return model
+
 @app.before_first_request
 def loadmodel():
     global Service
     global masked_url
     global result_data
     global missions_taifelds
+    global missions_taifelds_disfruta
     global missions_covid
     global my_faces
     global nombres
@@ -73,9 +167,12 @@ def loadmodel():
     global receivers
     global body_covid
     global body_taifelds
+    global body_taifelds_disfruta
+    global transfmr
 
     receivers = ['gotchudl@gmail.com','back.ght.001@gmail.com','medel@cimat.mx']
     body_taifelds = "Hay una nueva misión de Taifelds para validar en https://gchgame.web.app/ con número de tienda: "
+    body_taifelds_disfruta = "Hay una nueva misión de Disfruta y Gana para validar en https://gchgame.web.app/ con número de tienda: "
     body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
 
     metadata = db.MetaData()
@@ -135,6 +232,20 @@ def loadmodel():
               )
     metadata.create_all(engine_misions) #Creates Table
 
+    missions_taifelds_disfruta = db.Table('taifelds_disfruta', metadata,
+              db.Column('Id',db.Integer, nullable=False),
+              db.Column('Date',db.DateTime, nullable=False),
+              db.Column('User_Id',db.String(255), nullable=False),
+              db.Column('User_Latitude',db.DECIMAL, nullable=False),
+              db.Column('User_Longitude',db.DECIMAL, nullable=False),
+              db.Column('Url_Photo',db.String(255), nullable=False),
+              db.Column('Url_Video',db.String(255), nullable=False),
+              db.Column('Text',db.TEXT),
+              db.Column('Mission_Id',db.String(255), nullable=False),
+              db.Column('Flag',db.String(255), nullable=False),
+              )
+    metadata.create_all(engine_misions) #Creates Table
+
     missions_covid = db.Table('covid', metadata,
               db.Column('Id',db.Integer, nullable=False),
               db.Column('Name',db.String(255), nullable=False),
@@ -152,6 +263,12 @@ def loadmodel():
               db.Column('Mission_Id',db.String(255), nullable=False),
               )
     metadata.create_all(engine_misions) #Creates Table
+
+    # load the model
+    scene_model_365 = load_scene_model()
+
+    # load the transformer
+    transfmr = returnTF() # image transformer
 
     my_faces = []
     images = ['images/ManuelNeria.jpeg','images/Alex.jpg','images/Alma.jpg','images/Robert.jpg',
@@ -218,7 +335,9 @@ def loadmodel():
     app.model = [sess,image_tensor,detection_boxes,
                  detection_scores,detection_classes,num_detections,
                  CATEGORY_INDEX,MINIMUM_CONFIDENCE,model_incres,
-                 detector,prediction,porn_model,yolo_model,Service,screen_model]
+                 detector,prediction,porn_model,
+                 yolo_model,Service,screen_model,
+                 scene_model_365]
 
 def url_to_image2(url):
 	"""download the image, convert it to a NumPy array, and then read
@@ -1029,9 +1148,50 @@ def detect_human(image_path,validar,extras):
     if validar == 'na':
         Service[2] = True
 
-def detect_scene(image_path,validar,class_names,class_names_param,x):
+def detect_scene(image_path,validar,class_names,class_names_param,x,scene_classes,labels_IO,labels_attribute,W_attribute):
+    global features_blobs
+    features_blobs = []
     if validar == 'na':
         Service[1] = True
+
+    elif validar in scene_classes or validar in labels_attribute or validar == 'indoor':
+        model = app.model[15]
+        # load the test image
+        urllib.request.urlretrieve(image_path, '00000003.jpg')
+        img = Image.open('00000003.jpg')
+        input_img = V(transfmr(img).unsqueeze(0))
+
+        # forward pass
+        logit = model.forward(input_img)
+        h_x = F.softmax(logit, 1).data.squeeze()
+        probs, idx = h_x.sort(0, True)
+        probs = probs.numpy()
+        idx = idx.numpy()
+
+        # output the IO prediction
+        if validar == 'indoor':
+            io_image = np.mean(labels_IO[idx[:10]]) # vote for the indoor or outdoor
+            if io_image < 0.5:
+                Service[1] = True #--TYPE OF ENVIRONMENT: indoor
+            else:
+                Service[1] = False #--TYPE OF ENVIRONMENT: outdoor
+        
+        else:
+            # output the prediction of scene category
+            scenes_top_list = []
+            for i in range(0, 5):
+                scenes_top_list.append(scene_classes[idx[i]])
+
+            # output the scene attributes
+            responses_attribute = W_attribute.dot(features_blobs[1])
+            idx_a = np.argsort(responses_attribute)
+            labels_attribute_top_list = [labels_attribute[idx_a[i]] for i in range(-1,-10,-1)]
+
+            if validar in scenes_top_list or validar in labels_attribute_top_list:
+                Service[1] = True
+            else:
+                Service[1] = False
+
     else:
         model = app.model[8]
         global indx
@@ -1288,6 +1448,7 @@ def location_time_validate():
 
                 Service = app.model[13]
                 T = []
+                scene_classes, labels_IO, labels_attribute, W_attribute = load_labels()
                 class_names = ['agua_calles','anaqueles_vacios','banqueta','calle_oscura','calles',
                                 'flood','forest','incendio','grietas','highway',
                                 'overflowed_river','park','beach','smoke','volcano']
@@ -1360,11 +1521,11 @@ def location_time_validate():
                     pass
                 #FACE... END
 
-                if validar1 in class_names or validar1 == 'na':
+                if validar1 in class_names or validar1 == 'na' or validar1 in scene_classes or validar1 in labels_attribute or validar1 == 'indoor':
                     if validar2 in objects or validar2 in labels or validar2 == 'na':
                         if validar3 in extras or validar3 == 'na':
                             
-                            p1 = Process(target=detect_scene(image_path,validar1,class_names,class_names_param,x))
+                            p1 = Process(target=detect_scene(image_path,validar1,class_names,class_names_param,x,scene_classes,labels_IO,labels_attribute,W_attribute))
                             p1.start()
                             p2 = Process(target=detect_human(image_path,validar3,extras))
                             p2.start()
@@ -1382,11 +1543,11 @@ def location_time_validate():
                             p2.terminate
                             
                             if False in Service:
-                                if validar4 in class_names or validar4 == 'na':
+                                if validar4 in class_names or validar4 == 'na' or validar4 in scene_classes or validar4 in labels_attribute or validar4 == 'indoor':
                                     if validar5 in objects or validar5 in labels or validar5 == 'na':
                                         if validar6 in extras or validar6 == 'na':
                                             
-                                            p1 = Process(target=detect_scene(image_path,validar4,class_names,class_names_param,x))
+                                            p1 = Process(target=detect_scene(image_path,validar4,class_names,class_names_param,x,scene_classes,labels_IO,labels_attribute,W_attribute))
                                             p1.start()
                                             p2 = Process(target=detect_human(image_path,validar6,extras))
                                             p2.start()
@@ -1433,11 +1594,11 @@ def location_time_validate():
                                     json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path)}
                                     return jsonify(json_respuesta)
                                 else:
-                                    if validar4 in class_names or validar4 == 'na':
+                                    if validar4 in class_names or validar4 == 'na' or validar4 in scene_classes or validar4 in labels_attribute or validar4 == 'indoor':
                                         if validar5 in objects or validar5 in labels or validar5 == 'na':
                                             if validar6 in extras or validar6 == 'na':
                                                 
-                                                p1 = Process(target=detect_scene(image_path,validar4,class_names,class_names_param,x))
+                                                p1 = Process(target=detect_scene(image_path,validar4,class_names,class_names_param,x,scene_classes,labels_IO,labels_attribute,W_attribute))
                                                 p1.start()
                                                 p2 = Process(target=detect_human(image_path,validar6,extras))
                                                 p2.start()
@@ -1590,7 +1751,8 @@ def contenido_explicito():
                   'linchar','chingar','chingate','joder','jodete','coger',
                   'follar','puto','puta','malnacido', 'golpear',
                   'pito','polla','pendeja','pendejo','pinche','mierda',
-                  'concha','chingatumadre','descuartizar']
+                  'concha','chingatumadre','descuartizar','mamada','sexo','pene',
+                  'nepe','mamadita','cojo']
     extras = ['persona','selfie','cara']
     text = data['text']
     
@@ -1725,7 +1887,7 @@ def taifelds_service():
 
     elif bandera != None:
         print('Error de request')
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
     else:
         pass
@@ -1740,10 +1902,11 @@ def taifelds_service():
                 results = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag != 'Yes')).fetchall()
         except Exception as e:
             print(e)
-            json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
             return jsonify(json_respuesta)
+
     if len(results) == 0:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
     df = pd.DataFrame(results)
     df.columns = results[0].keys()
@@ -1783,7 +1946,7 @@ def taifelds_service():
                             connection.execute(missions_taifelds.update().where(missions_taifelds.c.Address == direc).values(Flag = 'Pending'))
                     except Exception as e:
                         print(e)
-                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
                         return jsonify(json_respuesta)
                 
                 try:
@@ -1805,10 +1968,201 @@ def taifelds_service():
                 json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
                 return jsonify(json_respuesta)
         else:
-            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
             return jsonify(json_respuesta)
     else:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':True,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+
+@app.route('/taifelds-disfruta', methods=['POST'])
+def taifelds_disfruta_service():
+    global data
+    global json_respuesta
+    global bandera
+    global from_service
+    global video_path
+    global masked_url
+    global url2json0
+    global Service
+
+    from_service = 'Taifelds-disfruta'
+
+    data = request.json
+    bandera = request.args.get('re_data')
+    video_path = ''
+    extras = ['persona','selfie','cara']
+
+    if bandera != 'yes':
+        data['url'] = orientation_fix_function(data['url'])
+    
+    url2json0 = ['']
+    masked_url = [data['url']]
+    Service = [False,False,False,False]
+
+    if bandera == 'yes':
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_taifelds_disfruta]).where(missions_taifelds_disfruta.c.Flag == 'Pending')).fetchall()
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    results = connection.execute(db.select([missions_taifelds_disfruta]).where(missions_taifelds_disfruta.c.Flag == 'Pending')).fetchall()
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+
+        if len(results) == 0:
+            return jsonify({'Service':False})
+
+        df = pd.DataFrame(results)
+        df.columns = results[0].keys()
+        ids = df['Id'].tolist()
+        id_registro_salida = data['Id_Store']
+        if id_registro_salida not in ids:
+            return jsonify({'Service':False})
+
+        status = data['Status']
+
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(missions_taifelds_disfruta.update().where(missions_taifelds_disfruta.c.Id == id_registro_salida).values(Flag = status))
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    connection.execute(missions_taifelds_disfruta.update().where(missions_taifelds_disfruta.c.Id == id_registro_salida).values(Flag = status))
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+
+        
+        return jsonify({'Service':True})
+
+    elif bandera != None:
+        print('Error de request')
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+    else:
+        pass
+
+
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_taifelds_disfruta]).where(missions_taifelds_disfruta.c.Flag == 'Yes')).fetchall()
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_taifelds_disfruta]).where(missions_taifelds_disfruta.c.Flag == 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+            return jsonify(json_respuesta)
+    
+    if len(results) == 0:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+    df = pd.DataFrame(results)
+    df.columns = results[0].keys()
+    lat, lng, ids, user_ids = df['User_Latitude'].tolist(), df['User_Longitude'].tolist(), df['Id'].tolist(), df['User_Id'].tolist()
+    user_id = data['id']
+    if user_id in user_ids:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+    user_pos = (data['Location_latitude'],data['Location_longitude'])
+
+    image_path = data['url']
+    try:
+        video_path = data['Url_Video']
+    except KeyError as e:
+        video_path = ''
+        print(e)
+    
+    distancias = []
+    for t, g in zip(lat,lng):
+        distancias.append(geodesic(user_pos,(t,g)).meters)
+    if min(distancias) > 50:
+        
+        start_date = datetime.strptime(data['Start_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        end_date = datetime.strptime(data['End_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        user_time = (end_date - start_date).total_seconds()
+        mission_target_time = data['Target_time_mission']
+
+        if (user_time<=mission_target_time):
+            if liveness(image_path):
+                user_lat = data['Location_latitude']
+                user_lng = data['Location_longitude']
+                url_p = data['url']
+                url_v = data['Url_Video']
+                miss_id = data['id_mission']
+                texto_td = data['text']
+                try:
+                    with engine_misions.connect() as connection:
+                        connection.execute(missions_taifelds_disfruta.insert().values(
+                            Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                            User_Id = user_id,
+                            User_Latitude = user_lat,
+                            User_Longitude = user_lng,
+                            Url_Photo = url_p,
+                            Url_Video = url_v,
+                            Text = texto_td,
+                            Mission_Id = miss_id,
+                            Flag = 'Pending'))
+                        final_results = connection.execute(db.select([missions_taifelds_disfruta]).where(missions_taifelds_disfruta.c.User_Id == user_id)).fetchall()
+                        final_df = pd.DataFrame(final_results)
+                        final_df.columns = final_results[0].keys()
+                        final_ids = final_df['Id'].tolist()
+                        id_registro = final_ids[-1]
+                except Exception as e:
+                    print(e)
+                    try:
+                        with engine_misions.connect() as connection:
+                            connection.execute(missions_taifelds_disfruta.insert().values(
+                                Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                                User_Id = user_id,
+                                User_Latitude = user_lat,
+                                User_Longitude = user_lng,
+                                Url_Photo = url_p,
+                                Url_Video = url_v,
+                                Text = texto_td,
+                                Mission_Id = miss_id,
+                                Flag = 'Pending'))
+                            final_results = connection.execute(db.select([missions_taifelds_disfruta]).where(missions_taifelds_disfruta.c.User_Id == user_id)).fetchall()
+                            final_df = pd.DataFrame(final_results)
+                            final_df.columns = final_results[0].keys()
+                            final_ids = final_df['Id'].tolist()
+                            id_registro = final_ids[-1]
+                    except Exception as e:
+                        print(e)
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+                        return jsonify(json_respuesta)
+                
+                try:
+
+                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
+
+                    payload = {'id_tienda':id_registro,'message':body_taifelds_disfruta,'service':from_service,'subject':'Disfruta y Gana - NUEVA MISION'}
+                    headers = {'Content-Type': 'application/json'}
+
+                    response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
+
+                except Exception as e:
+                    print(e)
+                    pass
+                
+                detect_human(image_path,'selfie',extras)
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_registro,'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path)}
+                return jsonify(json_respuesta)
+
+            else:
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+                return jsonify(json_respuesta)
+        else:
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+            return jsonify(json_respuesta)
+    else:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
 
 @app.route('/covid', methods=['POST'])
@@ -1971,12 +2325,12 @@ def taifelds_map():
 @app.after_request
 def mysql_con(response):
     #Query a Cloud SQL
-    if from_service == 'Taifelds':
+    if from_service == 'Taifelds' or from_service == 'Taifelds-disfruta':
 
         if bandera == None:
             try:
                 with engine.connect() as connection:
-                    data_a_cloud_sql = [{'From Service':'Taifelds','Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
                                         'User Id':data['id'],'User Name':data['name'],
                                         'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
                                         'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
