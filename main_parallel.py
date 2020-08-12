@@ -159,6 +159,7 @@ def loadmodel():
     global masked_url
     global result_data
     global missions_taifelds
+    global missions_taifelds2
     global missions_taifelds_disfruta
     global missions_covid
     global my_faces
@@ -215,6 +216,24 @@ def loadmodel():
     metadata.create_all(engine) #Creates Table
 
     missions_taifelds = db.Table('taifelds', metadata,
+              db.Column('Id',db.Integer, nullable=False),
+              db.Column('Store',db.String(255), nullable=False),
+              db.Column('Name',db.String(255), nullable=False),
+              db.Column('Address',db.String(255), nullable=False),
+              db.Column('Latitude',db.String(255), nullable=False),
+              db.Column('Longitude',db.String(255), nullable=False),
+              db.Column('Flag',db.String(255), nullable=False),
+              db.Column('Date',db.DateTime, nullable=False),
+              db.Column('User_Id',db.String(255), nullable=False),
+              db.Column('User_Latitude',db.DECIMAL, nullable=False),
+              db.Column('User_Longitude',db.DECIMAL, nullable=False),
+              db.Column('Url_Photo',db.String(255), nullable=False),
+              db.Column('Url_Video',db.String(255), nullable=False),
+              db.Column('Mission_Id',db.String(255), nullable=False),
+              )
+    metadata.create_all(engine_misions) #Creates Table
+
+    missions_taifelds2 = db.Table('taifelds2', metadata,
               db.Column('Id',db.Integer, nullable=False),
               db.Column('Store',db.String(255), nullable=False),
               db.Column('Name',db.String(255), nullable=False),
@@ -1944,6 +1963,164 @@ def taifelds_service():
                     try:
                         with engine_misions.connect() as connection:
                             connection.execute(missions_taifelds.update().where(missions_taifelds.c.Address == direc).values(Flag = 'Pending'))
+                    except Exception as e:
+                        print(e)
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+                        return jsonify(json_respuesta)
+                
+                try:
+
+                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
+
+                    payload = {'id_tienda':id_tienda,'message':body_taifelds,'service':from_service,'subject':'Taifelds - NUEVA MISION'}
+                    headers = {'Content-Type': 'application/json'}
+
+                    response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
+
+                except Exception as e:
+                    print(e)
+                    pass
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path)}
+                return jsonify(json_respuesta)
+
+            else:
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+                return jsonify(json_respuesta)
+        else:
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+            return jsonify(json_respuesta)
+    else:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+
+@app.route('/taifelds2', methods=['POST'])
+def taifelds_service2():
+    global data
+    global json_respuesta
+    global bandera
+    global from_service
+    global video_path
+
+    from_service = 'Taifelds'
+
+    data = request.json
+    bandera = request.args.get('re_data')
+    video_path = ''
+
+    if bandera != 'yes':
+        data['url'] = orientation_fix_function(data['url'])
+
+    if bandera == 'yes':
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_taifelds2]).where(missions_taifelds2.c.Flag == 'Pending')).fetchall()
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    results = connection.execute(db.select([missions_taifelds2]).where(missions_taifelds2.c.Flag == 'Pending')).fetchall()
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+        if len(results) == 0:
+            return jsonify({'Service':False})
+        df = pd.DataFrame(results)
+        df.columns = results[0].keys()
+        lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+
+        id_tienda_salida = data['Id_Store']
+        if id_tienda_salida not in ids:
+            return jsonify({'Service':False})
+
+        status = data['Status']
+        user_id = data['User_Id']
+        user_lat = data['User_Latitude']
+        user_lng = data['User_Longitude']
+        url_p = data['Url_Photo']
+        url_v = data['Url_Video']
+        video_path = data['Url_Video']
+        miss_id = data['Mission_Id']
+
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(missions_taifelds2.update().where(missions_taifelds2.c.Id == id_tienda_salida).values(Flag = status,
+                    Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
+                    Url_Video = url_v, Mission_Id = miss_id))
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    connection.execute(missions_taifelds2.update().where(missions_taifelds2.c.Id == id_tienda_salida).values(Flag = status,
+                        Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
+                        Url_Video = url_v, Mission_Id = miss_id))
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+
+        
+        return jsonify({'Service':True})
+
+    elif bandera != None:
+        print('Error de request')
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+    else:
+        pass
+
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_taifelds2]).where(missions_taifelds2.c.Flag != 'Yes')).fetchall()
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_taifelds2]).where(missions_taifelds2.c.Flag != 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+            return jsonify(json_respuesta)
+
+    if len(results) == 0:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+    df = pd.DataFrame(results)
+    df.columns = results[0].keys()
+    lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+    user_pos = (data['Location_latitude'],data['Location_longitude']) 
+    
+    image_path = data['url']
+    try:
+        video_path = data['Url_Video']
+    except KeyError as e:
+        video_path = ''
+        print(e)
+    distancias = []
+    for t, g in zip(lat,lng):
+        distancias.append(geodesic(user_pos,(t,g)).meters)
+    if min(distancias) < 300:
+        
+        start_date = datetime.strptime(data['Start_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        end_date = datetime.strptime(data['End_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        user_time = (end_date - start_date).total_seconds()
+        mission_target_time = data['Target_time_mission']
+
+        if (user_time<=mission_target_time):
+            if liveness(image_path):
+                j = np.argmin(distancias)
+                direc = address[j]
+                id_tienda = ids[j]
+                data['Location_mission_latitude'] = lat[j]
+                data['Location_mission_longitude'] = lng[j]
+                try:
+                    with engine_misions.connect() as connection:
+                        connection.execute(missions_taifelds2.update().where(missions_taifelds2.c.Address == direc).values(Flag = 'Pending'))
+                except Exception as e:
+                    print(e)
+                    try:
+                        with engine_misions.connect() as connection:
+                            connection.execute(missions_taifelds2.update().where(missions_taifelds2.c.Address == direc).values(Flag = 'Pending'))
                     except Exception as e:
                         print(e)
                         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
