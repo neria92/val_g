@@ -177,6 +177,13 @@ def loadmodel():
     body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
 
     metadata = db.MetaData()
+    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
+    
+    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
+    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
+    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
+    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
+
 
     #base de datos de texto
     result_data = db.Table('result_data', metadata,
@@ -743,40 +750,46 @@ def correct_rotation(frame, rotateCode):
     return cv2.rotate(frame, rotateCode) 
 
 def video_to_thumbnail_url(video_path,threshold=50,threshold2=200,thumb_width=400,thumb_height=600,limit=5):
-  if video_path == '':
-    return ''
-  try:
-    urllib.request.urlretrieve(video_path,'gotchu_video.mp4')
-  except Exception:
-    return ''
-  video_path = 'gotchu_video.mp4'
-  # check if video requires rotation
-  rotateCode = check_rotation(video_path)
+    if video_path == '':
+        return ''
+    try:
+        urllib.request.urlretrieve(video_path,'gotchu_video.mp4')
+    except Exception:
+        return ''
 
-  vcap = cv2.VideoCapture(video_path)
-  response, image = vcap.read()
-  i = 0
-  while (image.mean() < threshold or image.mean() > threshold2) and response and i < limit:
-    i += 1
-    response, image = vcap.read()
+    try:
+        video_path = 'gotchu_video.mp4'
+        # check if video requires rotation
+        rotateCode = check_rotation(video_path)
 
-  if rotateCode is not None:
-    image = correct_rotation(image, rotateCode)
+        vcap = cv2.VideoCapture(video_path)
+        response, image = vcap.read()
+        i = 0
+        while (image.mean() < threshold or image.mean() > threshold2) and response and i < limit:
+            i += 1
+            response, image = vcap.read()
 
-  al, an, ca = image.shape
-  if al >= an:
-    image = cv2.resize(image, (thumb_width, thumb_height), 0, 0, cv2.INTER_LINEAR)
-    overlay = cv2.imread('images/play_r.png')
-  if an > al:
-    image = cv2.resize(image, (thumb_height, thumb_width), 0, 0, cv2.INTER_LINEAR)
-    overlay = cv2.imread('images/play_ra.png')
+        if rotateCode is not None:
+            image = correct_rotation(image, rotateCode)
 
-  background = image
-  overlay = cv2.resize(overlay, (background.shape[1], background.shape[0]), 0, 0, cv2.INTER_LINEAR)
-  added_image = cv2.addWeighted(background,0.6,overlay,0.2,0)
+        al, an, ca = image.shape
+        if al >= an:
+            image = cv2.resize(image, (thumb_width, thumb_height), 0, 0, cv2.INTER_LINEAR)
+            overlay = cv2.imread('images/play_r.png')
+        if an > al:
+            image = cv2.resize(image, (thumb_height, thumb_width), 0, 0, cv2.INTER_LINEAR)
+            overlay = cv2.imread('images/play_ra.png')
 
-  cv2.imwrite('thumbnail.jpg', added_image)
-  return upload_image_file('thumbnail.jpg')
+        background = image
+        overlay = cv2.resize(overlay, (background.shape[1], background.shape[0]), 0, 0, cv2.INTER_LINEAR)
+        added_image = cv2.addWeighted(background,0.6,overlay,0.2,0)
+
+        cv2.imwrite('thumbnail.jpg', added_image)
+        return upload_image_file('thumbnail.jpg')
+    except Exception as e:
+        print(e)
+        return ''
+  
 
 def detect_objects(image_path,validar,names,labels):
     if validar in names:
@@ -1266,24 +1279,24 @@ def porn_explicit(image_path,i):
     
     if img.format == 'PNG':
         img = img.resize((299,299))
-        img.save('/tmp/0003.png')
+        img.save('images/0003p.png')
 
-        j = '/tmp/0003.png'
+        j = 'images/0003p.png'
         img = cv2.imread(j)
         cv2.imwrite(j[:-3] + 'jpg', img)
 
-        img = Image.open('/tmp/0003.jpg')
+        img = Image.open('images/0003p.jpg')
         img = img.resize((299,299))
-        img = img.save('/tmp/001.JPG')  #
-        img = ig.load_img('/tmp/001.JPG', target_size = (299,299))  #
+        img = img.save('images/001p.JPG')  #
+        img = ig.load_img('images/001p.JPG', target_size = (299,299))  #
         x = ig.img_to_array(img)
         x = x.reshape((1,) + x.shape)
         x = x/255
         
     else:
         img = img.resize((299,299))
-        img = img.save('/tmp/001.JPG')  #
-        img = ig.load_img('/tmp/001.JPG', target_size = (299,299))  #
+        img = img.save('images/001p.JPG')  #
+        img = ig.load_img('images/001p.JPG', target_size = (299,299))  #
         x = ig.img_to_array(img)
         x = x.reshape((1,) + x.shape)
         x = x/255
@@ -2099,7 +2112,7 @@ def taifelds_service2():
     distancias = []
     for t, g in zip(lat,lng):
         distancias.append(geodesic(user_pos,(t,g)).meters)
-    if min(distancias) < 300:
+    if min(distancias) < 500:
         
         start_date = datetime.strptime(data['Start_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
         end_date = datetime.strptime(data['End_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
@@ -2497,6 +2510,12 @@ def taifelds_map():
     global from_service
     from_service = 'get'
     return render_template('index.html')
+
+@app.route('/taifelds-cul-map', methods=['GET'])
+def taifelds_cul_map():
+    global from_service
+    from_service = 'get'
+    return render_template('index_cul.html')
 
 
 @app.after_request
