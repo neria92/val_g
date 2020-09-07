@@ -19,7 +19,7 @@ from tensorflow.keras.models import load_model
 from flask import Flask, request, jsonify, render_template
 from multiprocessing import Process
 from geopy.distance import geodesic
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from flask_cors import CORS
 from matplotlib import pyplot
 from matplotlib.patches import Rectangle
@@ -34,7 +34,7 @@ import imutils
 import urllib
 import six
 import cv2
-
+import re
 import os
 import sys
 import dlib
@@ -53,7 +53,7 @@ from imutils import paths
 from math import floor, atan2, degrees, sin, cos, pi
 from scipy import ndimage
 from scipy.spatial.distance import euclidean, pdist, squareform
-from google.cloud import storage
+from google.cloud import storage, vision
 from werkzeug.utils import secure_filename
 import yagmail
 from exif import Image as exif_image
@@ -62,6 +62,8 @@ from torch.autograd import Variable as V
 import torchvision.models as models
 from torchvision import transforms as trn
 from torch.nn import functional as F
+
+
 
 user = os.environ.get("DB_USER")
 password = os.environ.get("DB_PASS")
@@ -160,6 +162,7 @@ def loadmodel():
     global result_data
     global missions_taifelds
     global missions_taifelds2
+    global missions_hidrosina
     global missions_taifelds_disfruta
     global missions_covid
     global my_faces
@@ -168,6 +171,7 @@ def loadmodel():
     global receivers
     global body_covid
     global body_taifelds
+    global body_hidrosina
     global body_taifelds_disfruta
     global transfmr
 
@@ -175,120 +179,15 @@ def loadmodel():
     body_taifelds = "Hay una nueva misión de Taifelds para validar en https://gchgame.web.app/ con número de tienda: "
     body_taifelds_disfruta = "Hay una nueva misión de Disfruta y Gana para validar en https://gchgame.web.app/ con número de tienda: "
     body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
+    body_hidrosina = "Hay una nueva misión de Hidrosina para validar en https://gchgame.web.app/ con número de Id: "
 
     metadata = db.MetaData()
     result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
-    
-    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
-    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
-    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
-    result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
-
-
-    #base de datos de texto
-    result_data = db.Table('result_data', metadata,
-                db.Column('From Service',db.String(255), nullable=False),
-                db.Column('Date',db.DateTime),
-                db.Column('User Id',db.TEXT, nullable=False),
-                db.Column('User Name',db.TEXT, nullable=False),
-                db.Column('Mission Id',db.TEXT, nullable=False),
-                db.Column('Mission Name',db.TEXT, nullable=False),
-                db.Column('User Latitude',db.FLOAT(10,8), nullable=False),
-                db.Column('User Longitude',db.FLOAT(10,8), nullable=False),
-                db.Column('Mission Latitude',db.FLOAT(10,8), nullable=False),
-                db.Column('Mission Longitude',db.FLOAT(10,8), nullable=False),
-                db.Column('Start Date Mission',db.String(255), nullable=False),
-                db.Column('End Date Mission',db.String(255), nullable=False),
-                db.Column('Target Time',db.INT),
-                db.Column('Radio',db.INT),
-                db.Column('URL', db.TEXT),
-                db.Column('URL Primaria', db.TEXT),
-                db.Column('URL Selfie', db.TEXT),
-                db.Column('URL Video', db.TEXT),
-                db.Column('URL Thumbnail (Video)', db.TEXT),
-                db.Column('Text', db.TEXT),
-                db.Column('Target_Scene',db.String(255)),
-                db.Column('Target_Extra',db.String(255)),
-                db.Column('Target_Object',db.String(255)),
-                db.Column('Detected Object(s)',db.String(255)),
-                db.Column('Location',db.BOOLEAN),
-                db.Column('Time',db.BOOLEAN),
-                db.Column('Porn',db.BOOLEAN),
-                db.Column('Live',db.BOOLEAN),
-                db.Column('Scene',db.BOOLEAN),
-                db.Column('Extra',db.BOOLEAN),
-                db.Column('Object',db.BOOLEAN),
-                db.Column('Service',db.BOOLEAN),
-                )
-    metadata.create_all(engine) #Creates Table
-
-    missions_taifelds = db.Table('taifelds', metadata,
-              db.Column('Id',db.Integer, nullable=False),
-              db.Column('Store',db.String(255), nullable=False),
-              db.Column('Name',db.String(255), nullable=False),
-              db.Column('Address',db.String(255), nullable=False),
-              db.Column('Latitude',db.String(255), nullable=False),
-              db.Column('Longitude',db.String(255), nullable=False),
-              db.Column('Flag',db.String(255), nullable=False),
-              db.Column('Date',db.DateTime, nullable=False),
-              db.Column('User_Id',db.String(255), nullable=False),
-              db.Column('User_Latitude',db.DECIMAL, nullable=False),
-              db.Column('User_Longitude',db.DECIMAL, nullable=False),
-              db.Column('Url_Photo',db.String(255), nullable=False),
-              db.Column('Url_Video',db.String(255), nullable=False),
-              db.Column('Mission_Id',db.String(255), nullable=False),
-              )
-    metadata.create_all(engine_misions) #Creates Table
-
-    missions_taifelds2 = db.Table('taifelds2', metadata,
-              db.Column('Id',db.Integer, nullable=False),
-              db.Column('Store',db.String(255), nullable=False),
-              db.Column('Name',db.String(255), nullable=False),
-              db.Column('Address',db.String(255), nullable=False),
-              db.Column('Latitude',db.String(255), nullable=False),
-              db.Column('Longitude',db.String(255), nullable=False),
-              db.Column('Flag',db.String(255), nullable=False),
-              db.Column('Date',db.DateTime, nullable=False),
-              db.Column('User_Id',db.String(255), nullable=False),
-              db.Column('User_Latitude',db.DECIMAL, nullable=False),
-              db.Column('User_Longitude',db.DECIMAL, nullable=False),
-              db.Column('Url_Photo',db.String(255), nullable=False),
-              db.Column('Url_Video',db.String(255), nullable=False),
-              db.Column('Mission_Id',db.String(255), nullable=False),
-              )
-    metadata.create_all(engine_misions) #Creates Table
-
-    missions_taifelds_disfruta = db.Table('taifelds_disfruta', metadata,
-              db.Column('Id',db.Integer, nullable=False),
-              db.Column('Date',db.DateTime, nullable=False),
-              db.Column('User_Id',db.String(255), nullable=False),
-              db.Column('User_Latitude',db.DECIMAL, nullable=False),
-              db.Column('User_Longitude',db.DECIMAL, nullable=False),
-              db.Column('Url_Photo',db.String(255), nullable=False),
-              db.Column('Url_Video',db.String(255), nullable=False),
-              db.Column('Text',db.TEXT),
-              db.Column('Mission_Id',db.String(255), nullable=False),
-              db.Column('Flag',db.String(255), nullable=False),
-              )
-    metadata.create_all(engine_misions) #Creates Table
-
-    missions_covid = db.Table('covid', metadata,
-              db.Column('Id',db.Integer, nullable=False),
-              db.Column('Name',db.String(255), nullable=False),
-              db.Column('Address',db.String(255), nullable=False),
-              db.Column('Institution',db.String(255), nullable=False),
-              db.Column('Latitude',db.String(255), nullable=False),
-              db.Column('Longitude',db.String(255), nullable=False),
-              db.Column('Flag',db.String(255), nullable=False),
-              db.Column('Date',db.DateTime, nullable=False),
-              db.Column('User_Id',db.String(255), nullable=False),
-              db.Column('User_Latitude',db.DECIMAL, nullable=False),
-              db.Column('User_Longitude',db.DECIMAL, nullable=False),
-              db.Column('Url_Photo',db.String(255), nullable=False),
-              db.Column('Url_Video',db.String(255), nullable=False),
-              db.Column('Mission_Id',db.String(255), nullable=False),
-              )
-    metadata.create_all(engine_misions) #Creates Table
+    missions_taifelds = db.Table('taifelds', metadata, autoload=True, autoload_with=engine_misions)
+    missions_taifelds2 = db.Table('taifelds2', metadata, autoload=True, autoload_with=engine_misions)
+    missions_hidrosina = db.Table('hidrosina', metadata, autoload=True, autoload_with=engine_misions)
+    missions_taifelds_disfruta = db.Table('taifelds_disfruta', metadata, autoload=True, autoload_with=engine_misions)
+    missions_covid = db.Table('covid', metadata, autoload=True, autoload_with=engine_misions)
 
     # load the model
     scene_model_365 = load_scene_model()
@@ -728,25 +627,29 @@ def orientation_fix_function(image_path):
 def check_rotation(path_video_file):
     # this returns meta-data of the video file in form of a dictionary
     try:
-      meta_dict = ffmpeg.probe(path_video_file)
-    except Exception:
-      meta_dict = {'streams':[{'tags':{'rotate':0}}]}
+        meta_dict = ffmpeg.probe(path_video_file)
+    except Exception as e:
+        print(e)
+        print('No meta-video')
+        meta_dict = {'streams':[{'tags':{'rotate':0}}]}
   
     # from the dictionary, meta_dict['streams'][0]['tags']['rotate'] is the key
     # we are looking for
     rotateCode = None
     try:
-      if int(meta_dict['streams'][0]['tags']['rotate']) == 90:
-          rotateCode = cv2.ROTATE_90_CLOCKWISE
-      elif int(meta_dict['streams'][0]['tags']['rotate']) == 180:
-          rotateCode = cv2.ROTATE_180
-      elif int(meta_dict['streams'][0]['tags']['rotate']) == 270:
-          rotateCode = cv2.ROTATE_90_COUNTERCLOCKWISE
+        if int(meta_dict['streams'][0]['tags']['rotate']) == 90:
+            rotateCode = cv2.ROTATE_90_CLOCKWISE
+        elif int(meta_dict['streams'][0]['tags']['rotate']) == 180:
+            rotateCode = cv2.ROTATE_180
+        elif int(meta_dict['streams'][0]['tags']['rotate']) == 270:
+            rotateCode = cv2.ROTATE_90_COUNTERCLOCKWISE
     except Exception:
       pass
+    print(rotateCode)
     return rotateCode
     
-def correct_rotation(frame, rotateCode):  
+def correct_rotation(frame, rotateCode):
+    print('corrigiendo')  
     return cv2.rotate(frame, rotateCode) 
 
 def video_to_thumbnail_url(video_path,threshold=50,threshold2=200,thumb_width=400,thumb_height=600,limit=5):
@@ -769,8 +672,9 @@ def video_to_thumbnail_url(video_path,threshold=50,threshold2=200,thumb_width=40
             i += 1
             response, image = vcap.read()
 
-        if rotateCode is not None:
+        if rotateCode != None:
             image = correct_rotation(image, rotateCode)
+            print('video corregido')
 
         al, an, ca = image.shape
         if al >= an:
@@ -1377,6 +1281,60 @@ def face_recog(val_face,image_path):
     else:
         return False
 
+def detect_text_uri(uri):
+    """Detects text in the file located in Google Cloud Storage or on the Web.
+    """
+    client = vision.ImageAnnotatorClient()
+    image = vision.types.Image()
+    image.source.image_uri = uri
+
+    response = client.text_detection(image=image)
+    texts = response.text_annotations
+    text_list = []
+    for text in texts:
+      #print(text.description)
+      text_list.append(text.description)
+    full_text = ''.join(text_list)
+    return full_text
+
+def find_fecha_hora(full_text):
+    fecha_list = re.findall('\d{4}[/-]\d\d[/-]\d\d',full_text)
+    if len(fecha_list) == 0:
+      fecha = '1970-01-01'
+    else: fecha = fecha_list[0]
+
+    hora_list = re.findall('\d\d:\d\d',full_text)
+    if len(hora_list) == 0:
+      hora = '00:00'
+    else: hora = hora_list[0]
+    
+    return fecha, hora
+
+def fecha_hora_2_timestamp(fecha,hora):
+    fecha_str = fecha + ' ' + '00:00'
+    hora_str = '1970-01-01' + ' ' + hora
+    element_fecha = datetime.strptime(fecha_str,"%Y-%m-%d %H:%M")
+    element_hora = datetime.strptime(hora_str,"%Y-%m-%d %H:%M")
+    fecha_timestamp = datetime.timestamp(element_fecha)
+    hora_timestamp = datetime.timestamp(element_hora)
+    return fecha_timestamp, hora_timestamp
+
+def detect_text_uri_demo(uri):
+    """Detects text in the file located in Google Cloud Storage or on the Web.
+    """
+    client = vision.ImageAnnotatorClient()
+    image = vision.types.Image()
+    image.source.image_uri = uri
+
+    response = client.text_detection(image=image)
+    texts = response.text_annotations
+    
+    texto = texts[0].description
+    texto = texto.split('\n')
+    texto_final = {}
+    for i, t in enumerate(texto):
+      texto_final[i] = t
+    return texto_final
 
 @app.route('/', methods=['POST'])
 def location_time_validate():
@@ -2164,6 +2122,179 @@ def taifelds_service2():
         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
         return jsonify(json_respuesta)
 
+@app.route('/hidrosina', methods=['POST'])
+def hidrosina_service():
+    global data
+    global json_respuesta
+    global bandera
+    global from_service
+    global video_path
+
+    from_service = 'Hidrosina'
+
+    data = request.json
+    bandera = request.args.get('re_data')
+    video_path = ''
+
+    if bandera != 'yes':
+        data['url'] = orientation_fix_function(data['url'])
+
+    if bandera == 'yes':
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag == 'Pending')).fetchall()
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag == 'Pending')).fetchall()
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+        if len(results) == 0:
+            return jsonify({'Service':False})
+        df = pd.DataFrame(results)
+        df.columns = results[0].keys()
+        lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+
+        id_tienda_salida = data['Id_Store']
+        if id_tienda_salida not in ids:
+            return jsonify({'Service':False})
+
+        status = data['Status']
+        user_id = data['User_Id']
+        user_lat = data['User_Latitude']
+        user_lng = data['User_Longitude']
+        url_p = data['Url_Photo']
+        url_v = data['Url_Video']
+        video_path = data['Url_Video']
+        miss_id = data['Mission_Id']
+
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda_salida).values(Flag = status,
+                    Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
+                    Url_Video = url_v, Mission_Id = miss_id))
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda_salida).values(Flag = status,
+                        Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
+                        Url_Video = url_v, Mission_Id = miss_id))
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+
+        
+        return jsonify({'Service':True})
+
+    elif bandera != None:
+        print('Error de request')
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+    else:
+        pass
+
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall()
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+            return jsonify(json_respuesta)
+
+    if len(results) == 0:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+
+    df = pd.DataFrame(results)
+    df.columns = results[0].keys()
+    lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+    hora_inf, hora_sup = df['Horario_Inf_Timestamp'], df['Horario_Sup_Timestamp']
+    user_pos = (data['Location_latitude'],data['Location_longitude']) 
+    
+    image_path = data['url']
+    try:
+        video_path = data['Url_Video']
+    except KeyError as e:
+        video_path = ''
+        print(e)
+
+    full_text = detect_text_uri(image_path)
+    fecha, hora = find_fecha_hora(full_text)
+    fecha_timestamp, hora_timestamp = fecha_hora_2_timestamp(fecha,hora)
+
+    distancias = []
+    for t, g in zip(lat,lng):
+        distancias.append(geodesic(user_pos,(t,g)).meters)
+
+    indices_horarios = [i for i, v in enumerate(distancias) if v < 500]
+    horarios_vs_real_index = [i for i in indices_horarios if hora_inf[i] < hora_timestamp < hora_sup[i]]
+    
+    date_time_fecha = datetime.fromtimestamp(fecha_timestamp)
+    fecha_hoy_str = date_time_fecha.strftime("%Y-%m-%d")
+    fecha_hoy_str_real = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d")
+
+    if fecha_hoy_str_real == fecha_hoy_str and len(horarios_vs_real_index) > 0:
+        
+        start_date = datetime.strptime(data['Start_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        end_date = datetime.strptime(data['End_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        user_time = (end_date - start_date).total_seconds()
+        mission_target_time = data['Target_time_mission']
+
+        if (user_time<=mission_target_time):
+            if liveness(image_path):
+                j = horarios_vs_real_index[0]
+                id_tienda = ids[j]
+                data['Location_mission_latitude'] = lat[j]
+                data['Location_mission_longitude'] = lng[j]
+                try:
+                    with engine_misions.connect() as connection:
+                        connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda).values(Flag = 'Pending'))
+                except Exception as e:
+                    print(e)
+                    try:
+                        with engine_misions.connect() as connection:
+                            connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda).values(Flag = 'Pending'))
+                    except Exception as e:
+                        print(e)
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+                        return jsonify(json_respuesta)
+                
+                try:
+
+                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
+
+                    payload = {'id_tienda':id_tienda,'message':body_hidrosina,'service':from_service,'subject':'Hidrosina - NUEVA MISION'}
+                    headers = {'Content-Type': 'application/json'}
+
+                    response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
+
+                except Exception as e:
+                    print(e)
+                    pass
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path)}
+                return jsonify(json_respuesta)
+
+            else:
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+                return jsonify(json_respuesta)
+        else:
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+            return jsonify(json_respuesta)
+    else:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':''}
+        return jsonify(json_respuesta)
+
+
 @app.route('/taifelds-disfruta', methods=['POST'])
 def taifelds_disfruta_service():
     global data
@@ -2517,11 +2648,21 @@ def taifelds_cul_map():
     from_service = 'get'
     return render_template('index_cul.html')
 
+@app.route('/imagen-to-texto', methods=['POST'])
+def img2text():
+    global from_service
+    from_service = 'Texto'
+    data = request.json
+    image_path = data['url']
+    texto = detect_text_uri_demo(image_path)
+    json_respuesta = {'Texto':texto}
+    return jsonify(json_respuesta)
+
 
 @app.after_request
 def mysql_con(response):
     #Query a Cloud SQL
-    if from_service == 'Taifelds' or from_service == 'Taifelds-disfruta':
+    if from_service == 'Taifelds' or from_service == 'Taifelds-disfruta' or from_service == 'Hidrosina':
 
         if bandera == None:
             try:

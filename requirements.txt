@@ -27,5 +27,8 @@ google-cloud-storage
 yagmail
 exif
 ffmpeg-python
+ffprobe-python
+ffprobe
 torch==1.6.0+cu101
 torchvision==0.7.0+cu101
+google-cloud-vision
