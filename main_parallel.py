@@ -1,4 +1,4 @@
-#Manuel Neria #Push #NovatestGCP
+#Manuel Neria #Push #Nova
 #LICENCES
 
 # PlacesCNN to predict the scene category, attribute, and class activation map in a single pass
