@@ -1301,16 +1301,22 @@ def detect_text_uri(uri):
     return full_text
 
 def find_fecha_hora(full_text):
-    fecha_list = re.findall('\d{4}[/-]\d\d[/-]\d\d',full_text)
+    fecha_list = re.findall('\d{4}[/\-\s]\d\d[/\-\s]\d\d',full_text)
     if len(fecha_list) == 0:
       fecha = '1970-01-01'
     else: fecha = fecha_list[0]
 
-    hora_list = re.findall('\d\d:\d\d',full_text)
+    hora_list = re.findall('\d\d[:\.]\d\d',full_text)
     if len(hora_list) == 0:
-      hora = '00:00'
-    else: hora = hora_list[0]
+        hora = '00:00'
+    else:
+        if int(hora_list[0][3]) > 5:
+            hora = hora_list[0][:3] + '5' + hora_list[0][-1]
+        else: hora = hora_list[0]
     
+    fecha = fecha.replace(' ','-')
+    fecha = fecha.replace('/','-')
+    hora = hora.replace('.',':')
     return fecha, hora
 
 def fecha_hora_2_timestamp(fecha,hora):
@@ -1346,7 +1352,7 @@ def find_codigo_factura(full_text):
     return codigo[0]
 
 def find_no_ticket(full_text):
-    codigo = re.findall('(?<=N.Ticket: ).*',full_text)
+    codigo = re.findall('(?<=N\..{8})\d*',full_text)
     if len(codigo) == 0:
       return '0'
     codigo = codigo[0].split(' ')
@@ -2255,7 +2261,17 @@ def hidrosina_service():
     codigo = find_codigo_factura(full_text)
     no_ticket = find_no_ticket(full_text)
     fecha, hora = find_fecha_hora(full_text)
-    fecha_timestamp, hora_timestamp = fecha_hora_2_timestamp(fecha,hora)
+    try:
+        fecha_timestamp, hora_timestamp = fecha_hora_2_timestamp(fecha,hora)
+    except Exception as e:
+        print(e,fecha,hora)
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu!'}
+        return jsonify(json_respuesta)
+
+    if fecha == '1970-01-01' or hora == '00:00':
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu!'}
+        return jsonify(json_respuesta)
+
     if hora_timestamp < 21600:
         hora_timestamp += 86400
 
@@ -2270,7 +2286,11 @@ def hidrosina_service():
     fecha_hoy_str = date_time_fecha.strftime("%Y-%m-%d")
     fecha_hoy_str_real = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d")
 
-    if fecha_hoy_str_real == fecha_hoy_str and len(horarios_vs_real_index) > 0:
+    if fecha_hoy_str_real != fecha_hoy_str:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu!'}
+        return jsonify(json_respuesta)
+
+    if len(horarios_vs_real_index) > 0:
         
         start_date = datetime.strptime(data['Start_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
         end_date = datetime.strptime(data['End_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
