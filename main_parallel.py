@@ -1506,6 +1506,7 @@ def location_time_validate():
                 validar4 = request.args.get('o_validar_escena')
                 validar5 = request.args.get('o_validar_objeto')
                 validar6 = request.args.get('o_validar_extra')
+                liveness_flag = request.args.get('liveness')
                 try:
                     validar5 = validar5.replace('.',' ')
                 except Exception:
@@ -1553,6 +1554,8 @@ def location_time_validate():
                             p3.terminate
                             p4.terminate
                             p2.terminate
+                            if liveness_flag == 'no':
+                                Service[3] = True #NO
                             
                             if False in Service:
                                 if validar4 in class_names or validar4 == 'na' or validar4 in scene_classes or validar4 in labels_attribute or validar4 == 'indoor':
@@ -1575,6 +1578,8 @@ def location_time_validate():
                                             p3.terminate
                                             p1.terminate
                                             p2.terminate
+                                            if liveness_flag == 'no':
+                                                Service[3] = True #NO
                                             
                                             if False in Service:
                                                 json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':'','msg':''}
@@ -1626,6 +1631,8 @@ def location_time_validate():
                                                 p3.terminate
                                                 p1.terminate
                                                 p2.terminate
+                                                if liveness_flag == 'no':
+                                                    Service[3] = True #NO
                                                 
                                                 if False in Service:
                                                     json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':'','msg':''}
