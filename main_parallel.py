@@ -28,9 +28,11 @@ from tensorflow.keras.preprocessing.image import load_img
 from tensorflow.keras.preprocessing.image import img_to_array
 from io import BytesIO
 import numpy as np
+import pygsheets
 import unidecode
 import requests
 import imutils
+import base64
 import urllib
 import six
 import cv2
@@ -62,6 +64,7 @@ from torch.autograd import Variable as V
 import torchvision.models as models
 from torchvision import transforms as trn
 from torch.nn import functional as F
+from pyzbar.pyzbar import decode
 
 
 
@@ -172,6 +175,7 @@ def loadmodel():
     global body_covid
     global body_taifelds
     global body_hidrosina
+    global body_hidrosina_alerta
     global body_taifelds_disfruta
     global transfmr
 
@@ -180,6 +184,7 @@ def loadmodel():
     body_taifelds_disfruta = "Hay una nueva misión de Disfruta y Gana para validar en https://gchgame.web.app/ con número de tienda: "
     body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
     body_hidrosina = "Hay una nueva misión de Hidrosina para validar en https://gchgame.web.app/ con número de Id: "
+    body_hidrosina_alerta = "Hay una alerta de seguridad sanitaria por falta de cubrebocas en la estación con identificador HD "
 
     metadata = db.MetaData()
     result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
@@ -287,7 +292,7 @@ def _safe_filename(filename):
     ``filename.ext`` is transformed into ``filename-YYYY-MM-DD-HHMMSS.ext``
     """
     filename = secure_filename(filename)
-    date = datetime.utcnow().strftime("%Y-%m-%d-%H%M%S")
+    date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d-%H%M%S")
     basename, extension = filename.rsplit('.', 1)
     return "{0}-{1}.{2}".format(basename, date, extension)
 
@@ -682,14 +687,30 @@ def video_to_thumbnail_url(video_path,threshold=50,threshold2=200,thumb_width=40
         al, an, ca = image.shape
         if al >= an:
             image = cv2.resize(image, (thumb_width, thumb_height), 0, 0, cv2.INTER_LINEAR)
-            overlay = cv2.imread('images/play_r.png')
+            #overlay = cv2.imread('images/play_r.png')
+            foreground = cv2.imread('images/play_r.png') ###NEW (Quitando el fondo difuminado)
+            alpha = foreground ###NEW (Quitando el fondo difuminado)
+            alpha = cv2.bitwise_not(alpha) ###NEW (Quitando el fondo difuminado)
         if an > al:
             image = cv2.resize(image, (thumb_height, thumb_width), 0, 0, cv2.INTER_LINEAR)
-            overlay = cv2.imread('images/play_ra.png')
+            #overlay = cv2.imread('images/play_ra.png')
+            foreground = cv2.imread('images/play_ra.png') ###NEW (Quitando el fondo difuminado)
+            alpha = foreground ###NEW (Quitando el fondo difuminado)
+            alpha = cv2.bitwise_not(alpha) ###NEW (Quitando el fondo difuminado)
 
-        background = image
-        overlay = cv2.resize(overlay, (background.shape[1], background.shape[0]), 0, 0, cv2.INTER_LINEAR)
-        added_image = cv2.addWeighted(background,0.6,overlay,0.2,0)
+        background = image  ###NEW (Quitando el fondo difuminado)
+        foreground = cv2.resize(foreground, (background.shape[1], background.shape[0]), 0, 0, cv2.INTER_LINEAR) ###NEW (Quitando el fondo difuminado)
+        alpha = cv2.resize(alpha, (background.shape[1], background.shape[0]), 0, 0, cv2.INTER_LINEAR) ###NEW (Quitando el fondo difuminado)
+        foreground = foreground.astype(float) ###NEW (Quitando el fondo difuminado)
+        background = background.astype(float) ###NEW (Quitando el fondo difuminado)
+        alpha = alpha.astype(float)/255 ###NEW (Quitando el fondo difuminado)
+        foreground = cv2.multiply(alpha, foreground) ###NEW (Quitando el fondo difuminado)
+        background = cv2.multiply(1.0 - alpha, background) ###NEW (Quitando el fondo difuminado)
+        added_image = cv2.add(foreground, background) ###NEW (Quitando el fondo difuminado)
+
+        # background = image
+        # overlay = cv2.resize(overlay, (background.shape[1], background.shape[0]), 0, 0, cv2.INTER_LINEAR)
+        # added_image = cv2.addWeighted(background,0.6,overlay,0.2,0)
 
         cv2.imwrite('thumbnail.jpg', added_image)
         return upload_image_file('thumbnail.jpg')
@@ -816,6 +837,7 @@ def masked_face(image,end=False):
         mask_nsize_factor = mask_nsize/marks_list[name_img][1]
 
         mask = cv2.imread(name_img,-1)
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGRA2RGBA)
         mask = cv2.resize(mask,(mask_nsize,floor(mask_nsize*marks_list[name_img][4]))) 
         w, h, c = mask.shape
 
@@ -1039,6 +1061,7 @@ def detect_human(image_path,validar,extras):
             mydegrees = -degrees(myradians)
             
             mask = cv2.imread(name_img,-1)
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGRA2RGBA)
             mask = cv2.resize(mask,(mask_nsize,floor(mask_nsize*marks_list[name_img][4]))) 
 
             ####Código muy especial e infernal
@@ -1245,6 +1268,8 @@ def screen_explicit(image_path):
         Service[3] = False #NO
 
 def liveness(image_path):
+    if image_path == '':
+        return True
     response = requests.get(image_path)
     img = Image.open(BytesIO(response.content))
                     
@@ -1288,7 +1313,7 @@ def detect_text_uri(uri):
     """Detects text in the file located in Google Cloud Storage or on the Web.
     """
     client = vision.ImageAnnotatorClient()
-    image = vision.types.Image()
+    image = vision.Image()
     image.source.image_uri = uri
 
     response = client.text_detection(image=image)
@@ -1332,7 +1357,7 @@ def detect_text_uri_demo(uri):
     """Detects text in the file located in Google Cloud Storage or on the Web.
     """
     client = vision.ImageAnnotatorClient()
-    image = vision.types.Image()
+    image = vision.Image()
     image.source.image_uri = uri
 
     response = client.text_detection(image=image)
@@ -1357,6 +1382,57 @@ def find_no_ticket(full_text):
       return '0'
     codigo = codigo[0].split(' ')
     return codigo[0]
+
+def message_general_service(json_respuesta):
+    location = json_respuesta['Location']
+    time = json_respuesta['Time']
+    porn = json_respuesta['Porn']
+    service = json_respuesta['Service']
+
+    if service:
+        return '¡Felicidades Agente! Has cumplido tu misión satisfactoriamente'
+    elif porn:
+        return 'Tu captura tiene contenido explícito, si crees que esto es un error no te preocupes lo solucionaremos a la brevedad y tu captura será aceptada'
+    elif not location:
+        return 'No te encuentras en el lugar correcto para realizar tu misión, si crees que esto es un error no te preocupes lo solucionaremos a la brevedad y tu captura será aceptada'
+    elif not time:
+        return 'Esta misión ha expirado o aún no es momento de completarla, si crees que esto es un error no te preocupes lo solucionaremos a la brevedad y tu captura será aceptada'
+    else:
+        return 'Tu captura no cumple con los requerimientos de la misión, revisa la descripción de la misión. Si crees que esto es un error no te preocupes lo solucionaremos a la brevedad y tu captura será aceptada'
+
+def message_pay_service(json_respuesta):
+    location = json_respuesta['Location']
+    time = json_respuesta['Time']
+    porn = json_respuesta['Porn']
+    service = json_respuesta['Service']
+
+    if service:
+        return '¡Felicidades Agente! Has cumplido tu misión satisfactoriamente'
+    elif porn:
+        return 'Tu captura tiene contenido explícito, si crees que esto es un error no te preocupes lo solucionaremos a la brevedad y tu captura será aceptada'
+    elif not location:
+        return 'No te encuentras en el lugar correcto para realizar tu misión u otro agente ya hizo está misión aquí, si crees que esto es un error no te preocupes lo solucionaremos a la brevedad y tu captura será aceptada'
+    elif not time:
+        return 'Esta misión ha expirado o aún no es momento de completarla, si crees que esto es un error no te preocupes lo solucionaremos a la brevedad y tu captura será aceptada'
+    else:
+        return 'Tu captura no cumple con los requerimientos de la misión, revisa la descripción de la misión. Si crees que esto es un error no te preocupes lo solucionaremos a la brevedad y tu captura será aceptada'
+
+def url_qr_2_text(url):
+    try:
+        response = requests.get(url)
+        img = Image.open(BytesIO(response.content))
+    except:
+        return 'Corrupted Image'
+    try:
+        code = decode(img)
+        str_data = code[0].data
+        data_decoded = str_data.decode()
+        data64 = re.split('&|#',data_decoded)[-1]
+        message_bytes = base64.b64decode(data64)
+        message = message_bytes.decode('ascii')
+        return message
+    except:
+        return 'Impossible to read QR Code'
 
 @app.route('/', methods=['POST'])
 def location_time_validate():
@@ -1443,6 +1519,8 @@ def location_time_validate():
                     validar6 = 'na'
                     Service = [False,False,False,True]
                     json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':'','url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                    mission_message = message_general_service(json_respuesta)
+                    json_respuesta['msg'] = mission_message
                     return jsonify(json_respuesta)
                 response = requests.get(image_path)
                 img = Image.open(BytesIO(response.content))
@@ -1524,11 +1602,15 @@ def location_time_validate():
                         Service = [False,False,False,False]
                         from_service = 'face recognition'
                         json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':'','url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                        mission_message = message_general_service(json_respuesta)
+                        json_respuesta['msg'] = mission_message
                         return jsonify(json_respuesta)
                     else:
                         Service = [False,False,False,False]
                         from_service = 'face recognition'
                         json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                        mission_message = message_general_service(json_respuesta)
+                        json_respuesta['msg'] = mission_message
                         return jsonify(json_respuesta)
                 else:
                     pass
@@ -1583,24 +1665,34 @@ def location_time_validate():
                                             
                                             if False in Service:
                                                 json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':'','msg':''}
+                                                mission_message = message_general_service(json_respuesta)
+                                                json_respuesta['msg'] = mission_message
                                                 return jsonify(json_respuesta)
                                                 
                                             else:
                                                 det, detected_obj = detect_objects(image_path,validar5,objects,labels)
                                                 obj = det == validar5 or det in ppoliticos
                                                 json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                                                mission_message = message_general_service(json_respuesta)
+                                                json_respuesta['msg'] = mission_message
                                                 return jsonify(json_respuesta)
 
                                         else:
                                             json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':'','msg':''}
+                                            mission_message = message_general_service(json_respuesta)
+                                            json_respuesta['msg'] = mission_message
                                             return jsonify(json_respuesta)
 
                                     else:
                                         json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':'','msg':''}
+                                        mission_message = message_general_service(json_respuesta)
+                                        json_respuesta['msg'] = mission_message
                                         return jsonify(json_respuesta)
 
                                 else:
                                     json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':'','msg':''}
+                                    mission_message = message_general_service(json_respuesta)
+                                    json_respuesta['msg'] = mission_message
                                     return jsonify(json_respuesta)
 
                                 
@@ -1609,6 +1701,8 @@ def location_time_validate():
                                 if det == validar2 or det in ppoliticos:
                                     obj = True
                                     json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':False,'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                                    mission_message = message_general_service(json_respuesta)
+                                    json_respuesta['msg'] = mission_message
                                     return jsonify(json_respuesta)
                                 else:
                                     if validar4 in class_names or validar4 == 'na' or validar4 in scene_classes or validar4 in labels_attribute or validar4 == 'indoor':
@@ -1636,48 +1730,70 @@ def location_time_validate():
                                                 
                                                 if False in Service:
                                                     json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':not Service[0],'Url_themask':'','url_thumbnail':'','msg':''}
+                                                    mission_message = message_general_service(json_respuesta)
+                                                    json_respuesta['msg'] = mission_message
                                                     return jsonify(json_respuesta)
                                                 
                                                 else:
                                                     det, detected_obj = detect_objects(image_path,validar5,objects,labels)
                                                     obj = det == validar5 or det in ppoliticos
                                                     json_respuesta = {'Location':True,'Time':True,'Service':det == validar5 or det in ppoliticos,'Porn':False,'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                                                    mission_message = message_general_service(json_respuesta)
+                                                    json_respuesta['msg'] = mission_message
                                                     return jsonify(json_respuesta)
 
                                             else:
                                                 json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+                                                mission_message = message_general_service(json_respuesta)
+                                                json_respuesta['msg'] = mission_message
                                                 return jsonify(json_respuesta)
 
                                         else:
                                             json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+                                            mission_message = message_general_service(json_respuesta)
+                                            json_respuesta['msg'] = mission_message
                                             return jsonify(json_respuesta)
 
                                     else:
                                         json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+                                        mission_message = message_general_service(json_respuesta)
+                                        json_respuesta['msg'] = mission_message
                                         return jsonify(json_respuesta)
         
                         else:
                             json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+                            mission_message = message_general_service(json_respuesta)
+                            json_respuesta['msg'] = mission_message
                             return jsonify(json_respuesta)                            
                             
                     else:
                         json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+                        mission_message = message_general_service(json_respuesta)
+                        json_respuesta['msg'] = mission_message
                         return jsonify(json_respuesta)
 
                 else:
                     json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+                    mission_message = message_general_service(json_respuesta)
+                    json_respuesta['msg'] = mission_message
                     return jsonify(json_respuesta)
             
             else:
                 json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+                mission_message = message_general_service(json_respuesta)
+                json_respuesta['msg'] = mission_message
                 return jsonify(json_respuesta)
                              
         else:
             json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+            mission_message = message_general_service(json_respuesta)
+            json_respuesta['msg'] = mission_message
             return jsonify(json_respuesta)
        
     else:
         json_respuesta = {'Location':False,'Time':True,'Service':False,'Porn':False,'Url_themask':'','url_thumbnail':'','msg':''}
+        mission_message = message_general_service(json_respuesta)
+        json_respuesta['msg'] = mission_message
         return jsonify(json_respuesta)
 
 @app.route('/explicit', methods=['POST'])
@@ -1703,6 +1819,7 @@ def contenido_explicito():
     data = request.json
     data['url'] = orientation_fix_function(data['url'])
     re_explicit = request.args.get('re')
+    liveness_flag = request.args.get('liveness')
     if re_explicit != 'true':
         data['url2'] = orientation_fix_function(data['url2'])
     validar1 = 'none'
@@ -1771,7 +1888,7 @@ def contenido_explicito():
                   'follar','puto','puta','malnacido', 'golpear',
                   'pito','polla','pendeja','pendejo','pinche','mierda',
                   'concha','chingatumadre','descuartizar','mamada','sexo','pene',
-                  'nepe','mamadita','cojo']
+                  'nepe','mamadita','cojo','cogida','pack','nudes','apuñala']
     extras = ['persona','selfie','cara']
     text = data['text']
     
@@ -1806,6 +1923,8 @@ def contenido_explicito():
                         p3.start()
                         p2.join()
                         p3.join()
+                        if liveness_flag == 'no':
+                            Service[3] = False
                     p1.join()
                     p1.terminate
                     if re_explicit == 'true':
@@ -1821,18 +1940,28 @@ def contenido_explicito():
                         
                 if True in Service:
                     json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':'','url_thumbnail':'','msg':''}
+                    mission_message = message_general_service(json_respuesta)
+                    json_respuesta['msg'] = mission_message
                     return jsonify(json_respuesta)
                 else:
                     json_respuesta = {'Location':True,'Time':True,'Service':True,'Porn':Service[0] or Service[1],'Url_themask':imagen_final(masked_url[0]),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                    mission_message = message_general_service(json_respuesta)
+                    json_respuesta['msg'] = mission_message
                     return jsonify(json_respuesta)
             else:
                 json_respuesta = {'Location':True,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':'','url_thumbnail':'','msg':''}
+                mission_message = message_general_service(json_respuesta)
+                json_respuesta['msg'] = mission_message
                 return jsonify(json_respuesta)
         else:
             json_respuesta = {'Location':False,'Time':False,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':'','url_thumbnail':'','msg':''}
+            mission_message = message_general_service(json_respuesta)
+            json_respuesta['msg'] = mission_message
             return jsonify(json_respuesta)
     else:
         json_respuesta = {'Location':True,'Time':True,'Service':False,'Porn':Service[0] or Service[1],'Url_themask':'','url_thumbnail':'','msg':''}
+        mission_message = message_general_service(json_respuesta)
+        json_respuesta['msg'] = mission_message
         return jsonify(json_respuesta)
 
 @app.route('/taifelds', methods=['POST'])
@@ -1886,7 +2015,7 @@ def taifelds_service():
         try:
             with engine_misions.connect() as connection:
                 connection.execute(missions_taifelds.update().where(missions_taifelds.c.Id == id_tienda_salida).values(Flag = status,
-                    Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                     User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
                     Url_Video = url_v, Mission_Id = miss_id))
         except Exception as e:
@@ -1894,7 +2023,7 @@ def taifelds_service():
             try:
                 with engine_misions.connect() as connection:
                     connection.execute(missions_taifelds.update().where(missions_taifelds.c.Id == id_tienda_salida).values(Flag = status,
-                        Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                         User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
                         Url_Video = url_v, Mission_Id = miss_id))
             except Exception as e:
@@ -1902,11 +2031,61 @@ def taifelds_service():
                 return jsonify({'Service':False})
 
         
+        try:
+            with engine_misions.connect() as connection:
+                results_all = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag == 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    results_all = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag == 'Yes')).fetchall()
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False})
+
+        if len(results_all) == 0:
+            return jsonify({'Service':True})
+        df_all = pd.DataFrame(results_all)
+        df_all.columns = results_all[0].keys()
+        lat , lng, address, name_soriana, url_fotos, url_videos, fechas_captura  = df_all['Latitude'].tolist(), df_all['Longitude'].tolist(), df_all['Address'].tolist(), df_all['Name'].tolist(), df_all['Url_Photo'].tolist(), df_all['Url_Video'].tolist(), df_all['Date'].tolist()
+        nombre_de_mision, ids_all = df_all['Store'].tolist(), df_all['Id'].tolist()
+        df_all_dict = {'Id':ids_all,'Nombre de Misión':nombre_de_mision,'Nombre de Tienda':name_soriana,'Dirección':address,'Fecha de Captura':fechas_captura,'Latitud':lat,'Longitud':lng,'Foto':url_fotos,'Video':url_videos}
+        df_mrT = pd.DataFrame(df_all_dict)
+        df_mrT.sort_values('Fecha de Captura',ascending=False,inplace=True)
+        
+        try:
+            gc = pygsheets.authorize(service_file='images/gchgame-ea9d60803e55.json')
+
+            sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1tZTqFdEtLzUV2CaYqQSpV5PYEr0rElzv_oZ9D7RvABQ/edit?usp=sharing")
+            wks = sh.sheet1
+            wks.clear()
+            wks.set_dataframe(df_mrT,(1,1),extend = True)
+
+        except Exception as e:
+            print('Falló Sheets')
+            return jsonify({'Service':False})
+
+        try:
+            index_tienda_salida_id = ids_all.index(id_tienda_salida)
+            url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-to-mrT"
+            body_taifelds_to_MrT = f"Hay una nueva misión Taifelds cumplida; con dirección: "
+
+            payload = {'id_tienda':id_tienda_salida,'direccion':address[index_tienda_salida_id],'message':body_taifelds_to_MrT,
+                        'foto':url_p,'video':url_v,'service':from_service,'subject':'Taifelds - MISION CUMPLIDA'}
+            headers = {'Content-Type': 'application/json'}
+
+            response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
+
+        except Exception as e:
+            print('Falló Mail')
+            pass
+
+        
         return jsonify({'Service':True})
 
     elif bandera != None:
         print('Error de request')
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Ocurrió un error inesperado con esta misión, por favor repórtalo a Soporte Gotchu!'}
         return jsonify(json_respuesta)
     else:
         pass
@@ -1921,11 +2100,13 @@ def taifelds_service():
                 results = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag != 'Yes')).fetchall()
         except Exception as e:
             print(e)
-            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Ocurrió un error inesperado, vuelve a intentarlo por favor'}
+            mission_message = message_pay_service(json_respuesta)
+            json_respuesta['msg'] = mission_message
             return jsonify(json_respuesta)
 
     if len(results) == 0:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Lo sentimos, ya no hay ubicaciones disponibles para esta misión'}
         return jsonify(json_respuesta)
     df = pd.DataFrame(results)
     df.columns = results[0].keys()
@@ -1965,7 +2146,7 @@ def taifelds_service():
                             connection.execute(missions_taifelds.update().where(missions_taifelds.c.Address == direc).values(Flag = 'Pending'))
                     except Exception as e:
                         print(e)
-                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Ocurrió un error inesperado, vuelve a intentarlo por favor'}
                         return jsonify(json_respuesta)
                 
                 try:
@@ -1980,17 +2161,26 @@ def taifelds_service():
                 except Exception as e:
                     print(e)
                     pass
-                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':'','hideCapture':True}
+                mission_message = message_pay_service(json_respuesta)
+                json_respuesta['msg'] = mission_message
+                json_respuesta['msg'] = '¡Felicidades Agente! Hemos recibido tus evidencias, pronto serán calificadas, sigue ganando con Gotchu!'
                 return jsonify(json_respuesta)
 
             else:
                 json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+                mission_message = message_pay_service(json_respuesta)
+                json_respuesta['msg'] = mission_message
                 return jsonify(json_respuesta)
         else:
             json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+            mission_message = message_pay_service(json_respuesta)
+            json_respuesta['msg'] = mission_message
             return jsonify(json_respuesta)
     else:
         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+        mission_message = message_pay_service(json_respuesta)
+        json_respuesta['msg'] = mission_message
         return jsonify(json_respuesta)
 
 @app.route('/taifelds2', methods=['POST'])
@@ -2036,7 +2226,10 @@ def taifelds_service2():
         user_id = data['User_Id']
         user_lat = data['User_Latitude']
         user_lng = data['User_Longitude']
-        url_p = data['Url_Photo']
+        try:
+            url_p = data['Url_Photo']
+        except:
+            url_p = ''
         url_v = data['Url_Video']
         video_path = data['Url_Video']
         miss_id = data['Mission_Id']
@@ -2044,7 +2237,7 @@ def taifelds_service2():
         try:
             with engine_misions.connect() as connection:
                 connection.execute(missions_taifelds2.update().where(missions_taifelds2.c.Id == id_tienda_salida).values(Flag = status,
-                    Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                     User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
                     Url_Video = url_v, Mission_Id = miss_id))
         except Exception as e:
@@ -2052,7 +2245,7 @@ def taifelds_service2():
             try:
                 with engine_misions.connect() as connection:
                     connection.execute(missions_taifelds2.update().where(missions_taifelds2.c.Id == id_tienda_salida).values(Flag = status,
-                        Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                         User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
                         Url_Video = url_v, Mission_Id = miss_id))
             except Exception as e:
@@ -2064,7 +2257,7 @@ def taifelds_service2():
 
     elif bandera != None:
         print('Error de request')
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Ocurrió un error inesperado con esta misión, por favor repórtalo a Soporte Gotchu!'}
         return jsonify(json_respuesta)
     else:
         pass
@@ -2079,11 +2272,11 @@ def taifelds_service2():
                 results = connection.execute(db.select([missions_taifelds2]).where(missions_taifelds2.c.Flag != 'Yes')).fetchall()
         except Exception as e:
             print(e)
-            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Ocurrió un error inesperado, vuelve a intentarlo por favor'}
             return jsonify(json_respuesta)
 
     if len(results) == 0:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Lo sentimos, ya no hay ubicaciones disponibles para esta misión'}
         return jsonify(json_respuesta)
     df = pd.DataFrame(results)
     df.columns = results[0].keys()
@@ -2123,7 +2316,7 @@ def taifelds_service2():
                             connection.execute(missions_taifelds2.update().where(missions_taifelds2.c.Address == direc).values(Flag = 'Pending'))
                     except Exception as e:
                         print(e)
-                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+                        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Ocurrió un error inesperado, vuelve a intentarlo por favor'}
                         return jsonify(json_respuesta)
                 
                 try:
@@ -2138,17 +2331,26 @@ def taifelds_service2():
                 except Exception as e:
                     print(e)
                     pass
-                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':''}
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':id_tienda,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':'','hideCapture':True}
+                mission_message = message_pay_service(json_respuesta)
+                json_respuesta['msg'] = mission_message
+                json_respuesta['msg'] = '¡Felicidades Agente! Hemos recibido tus evidencias, pronto serán calificadas, sigue ganando con Gotchu!'
                 return jsonify(json_respuesta)
 
             else:
                 json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+                mission_message = message_pay_service(json_respuesta)
+                json_respuesta['msg'] = mission_message
                 return jsonify(json_respuesta)
         else:
             json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+            mission_message = message_pay_service(json_respuesta)
+            json_respuesta['msg'] = mission_message
             return jsonify(json_respuesta)
     else:
         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+        mission_message = message_pay_service(json_respuesta)
+        json_respuesta['msg'] = mission_message
         return jsonify(json_respuesta)
 
 @app.route('/hidrosina', methods=['POST'])
@@ -2203,7 +2405,7 @@ def hidrosina_service():
         try:
             with engine_misions.connect() as connection:
                 connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda_salida).values(Flag = status,
-                    Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                     User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
                     Url_Video = url_v, Mission_Id = miss_id))
         except Exception as e:
@@ -2211,7 +2413,7 @@ def hidrosina_service():
             try:
                 with engine_misions.connect() as connection:
                     connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda_salida).values(Flag = status,
-                        Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                         User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
                         Url_Video = url_v, Mission_Id = miss_id))
             except Exception as e:
@@ -2230,13 +2432,13 @@ def hidrosina_service():
 
     try:
         with engine_misions.connect() as connection:
-            results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall()
+            results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall() ########################TEMP#QUITADO
             results_yes = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag == 'Yes')).fetchall()
     except Exception as e:
         print(e)
         try:
             with engine_misions.connect() as connection:
-                results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall()
+                results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall() ########################TEMP#QUITADO
                 results_yes = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag == 'Yes')).fetchall()
         except Exception as e:
             print(e)
@@ -2249,7 +2451,8 @@ def hidrosina_service():
 
     df = pd.DataFrame(results)
     df.columns = results[0].keys()
-    lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+    lat , lng, address, ids, names_hd = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist(), df['Name'].tolist()
+    #flags = df['Flag'].tolist() ##################TEMP
     hora_inf, hora_sup = df['Horario_Inf_Timestamp'], df['Horario_Sup_Timestamp']
     user_pos = (data['Location_latitude'],data['Location_longitude'])
 
@@ -2279,19 +2482,19 @@ def hidrosina_service():
         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu!'}
         return jsonify(json_respuesta)
 
-    if hora_timestamp < 21600:
-        hora_timestamp += 86400
+    # if hora_timestamp < 21600:
+    #     hora_timestamp += 86400
 
     distancias = []
     for t, g in zip(lat,lng):
         distancias.append(geodesic(user_pos,(t,g)).meters)
 
-    indices_horarios = [i for i, v in enumerate(distancias) if v < 100]
+    indices_horarios = [i for i, v in enumerate(distancias) if v < 200]
     horarios_vs_real_index = [i for i in indices_horarios if hora_inf[i] < hora_timestamp < hora_sup[i]]
     
     date_time_fecha = datetime.fromtimestamp(fecha_timestamp)
     fecha_hoy_str = date_time_fecha.strftime("%Y-%m-%d")
-    fecha_hoy_str_real = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d")
+    fecha_hoy_str_real = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d")
 
     if fecha_hoy_str_real != fecha_hoy_str:
         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu!'}
@@ -2308,36 +2511,78 @@ def hidrosina_service():
             if no_ticket not in tickets:
                 j = horarios_vs_real_index[0]
                 id_tienda = ids[j]
+                name_hd = names_hd[j]
                 data['Location_mission_latitude'] = lat[j]
                 data['Location_mission_longitude'] = lng[j]
+                address_hidro = address[j]
                 user_id = data['id']
                 user_lat = user_pos[0]
                 user_lng = user_pos[1]
                 miss_id = data['id_mission']
+                qr_decoded = url_qr_2_text(image_path)
+                alerta_sanitaria = 'ninguna'
                 try:
                     hash_typeform = data['hash_typeform']
                 except KeyError as e:
                     hash_typeform = ''
                     print('no hay variable hash_typeform')
+                # if flags[j] == 'No': #################################TEMP
+
+
+                try:
+
+                    gc = pygsheets.authorize(service_file='images/gchgame-ea9d60803e55.json')
+                    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EZn8lzDV-51jJ7p95aVC4afRIlDlocW7nbabCBppMLU/edit?usp=sharing")
+                    wks = sh.sheet1
+                    df_typeform = wks.get_as_df()
+                    df_row = df_typeform.loc[df_typeform['capture_id'] == hash_typeform]
+                    if len(df_row) == 0:
+                        print('Hash no encontrado')
+                    else:
+                        alerta_cubrebocas = df_row['¿Qué no tenía el despachador?'].to_list()[0]
+                        if 'cubrebocas' in alerta_cubrebocas:
+                            alerta_sanitaria = 'cubrebocas'
+                            try:
+                                url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta"
+
+                                payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta,'service':from_service,'subject':'ALERTA DE SEGURIDAD SANITARIA'}
+                                headers = {'Content-Type': 'application/json'}
+
+                                response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
+                            except Exception as e:
+                                print(e,'fallo email alerta')
+                                pass
+
+                except Exception as e:
+                    print('Falló Sheets',e)
+
+
                 try:
                     with engine_misions.connect() as connection:
                         connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda).values(Flag = 'Yes',
-                            Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"), Fecha_Hora = fecha + ' ' + hora,
+                            Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Fecha_Hora = fecha + ' ' + hora,
                             User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = image_path,
-                            Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform, No_Ticket = no_ticket))
+                            Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform,
+                            No_Ticket = no_ticket, QR_Decoded = qr_decoded, Alerta = alerta_sanitaria))
+                        if (datetime.utcnow() - timedelta(hours=6)).day < 15:
+                            connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Address == address_hidro).values(Flag = 'Yes'))
                 except Exception as e:
                     print(e)
                     try:
                         with engine_misions.connect() as connection:
                             connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda).values(Flag = 'Yes',
-                                Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"), Fecha_Hora = fecha + ' ' + hora,
+                                Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Fecha_Hora = fecha + ' ' + hora,
                                 User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = image_path,
-                                Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform, No_Ticket = no_ticket))
+                                Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform,
+                                No_Ticket = no_ticket, QR_Decoded = qr_decoded))
+                        if (datetime.utcnow() - timedelta(hours=6)).day < 15:
+                            connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Address == address_hidro).values(Flag = 'Yes'))
                     except Exception as e:
                         print(e)
                         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Error de conexión, inténtalo nuevamente'}
                         return jsonify(json_respuesta)
                 
+
                 try:
 
                     url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
@@ -2350,7 +2595,8 @@ def hidrosina_service():
                 except Exception as e:
                     print(e)
                     pass
-                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':0,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':'¡Misión Hidrosina completada! Felicitaciones Agente'}
+
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':0,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':'¡Misión completada! Felicitaciones Agente'}
                 return jsonify(json_respuesta)
 
             else:
@@ -2360,7 +2606,7 @@ def hidrosina_service():
             json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Esta misión ha expirado'}
             return jsonify(json_respuesta)
     else:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'No te encuentras en una ubicación u horario disponible'}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'No te encuentras en una ubicación u horario disponible o esta estación ha sido completada en este periodo'}
         return jsonify(json_respuesta)
 
 @app.route('/taifelds-disfruta', methods=['POST'])
@@ -2489,7 +2735,7 @@ def taifelds_disfruta_service():
                 try:
                     with engine_misions.connect() as connection:
                         connection.execute(missions_taifelds_disfruta.insert().values(
-                            Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                            Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                             User_Id = user_id,
                             User_Latitude = user_lat,
                             User_Longitude = user_lng,
@@ -2508,7 +2754,7 @@ def taifelds_disfruta_service():
                     try:
                         with engine_misions.connect() as connection:
                             connection.execute(missions_taifelds_disfruta.insert().values(
-                                Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                                Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                                 User_Id = user_id,
                                 User_Latitude = user_lat,
                                 User_Longitude = user_lng,
@@ -2605,7 +2851,7 @@ def covid_service():
         try:
             with engine_misions.connect() as connection:
                 connection.execute(missions_covid.update().where(missions_covid.c.Id == id_tienda_salida).values(Flag = status,
-                    Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                     User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
                     Url_Video = url_v, Mission_Id = miss_id))
         except Exception as e:
@@ -2613,7 +2859,7 @@ def covid_service():
             try:
                 with engine_misions.connect() as connection:
                     connection.execute(missions_covid.update().where(missions_covid.c.Id == id_tienda_salida).values(Flag = status,
-                        Date = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                         User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
                         Url_Video = url_v, Mission_Id = miss_id))
             except Exception as e:
@@ -2726,6 +2972,16 @@ def img2text():
     json_respuesta = {'Texto':texto}
     return jsonify(json_respuesta)
 
+@app.route('/imagen-qr-to-texto', methods=['POST'])
+def imgqr2text():
+    global from_service
+    from_service = 'QR'
+    data = request.json
+    image_path = data['url']
+    texto_qr = url_qr_2_text(image_path)
+    json_respuesta = {'Texto':texto_qr}
+    return jsonify(json_respuesta)
+
 
 @app.after_request
 def mysql_con(response):
@@ -2735,7 +2991,7 @@ def mysql_con(response):
         if bandera == None:
             try:
                 with engine.connect() as connection:
-                    data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                                         'User Id':data['id'],'User Name':data['name'],
                                         'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
                                         'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
@@ -2747,7 +3003,7 @@ def mysql_con(response):
                                         'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                         'Porn':json_respuesta['Porn'],
                                         'Live':json_respuesta['Live'],
-                                        'Service':json_respuesta['Service']}]
+                                        'Service':json_respuesta['Service'],'Message':json_respuesta['msg']}]
                     query_cloud = db.insert(result_data)
                     ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
             except Exception as e:
@@ -2755,7 +3011,7 @@ def mysql_con(response):
                 
                 try:
                     with engine.connect() as connection:
-                        data_a_cloud_sql = [{'From Service':'Taifelds','Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        data_a_cloud_sql = [{'From Service':'Taifelds','Date':(datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                                             'User Id':data['id'],'User Name':data['name'],
                                             'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
                                             'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
@@ -2767,7 +3023,7 @@ def mysql_con(response):
                                             'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                             'Porn':json_respuesta['Porn'],
                                             'Live':json_respuesta['Live'],
-                                            'Service':json_respuesta['Service']}]
+                                            'Service':json_respuesta['Service'],'Message':json_respuesta['msg']}]
                         query_cloud = db.insert(result_data)
                         ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
                         print('Se logró')
@@ -2786,7 +3042,7 @@ def mysql_con(response):
         if bandera == None:
             try:
                 with engine.connect() as connection:
-                    data_a_cloud_sql = [{'From Service':'Covid','Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    data_a_cloud_sql = [{'From Service':'Covid','Date':(datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                                         'User Id':data['id'],'User Name':data['name'],
                                         'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
                                         'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
@@ -2798,7 +3054,7 @@ def mysql_con(response):
                                         'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                         'Porn':json_respuesta['Porn'],
                                         'Live':json_respuesta['Live'],
-                                        'Service':json_respuesta['Service']}]
+                                        'Service':json_respuesta['Service'],'Message':json_respuesta['msg']}]
                     query_cloud = db.insert(result_data)
                     ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
             except Exception as e:
@@ -2806,7 +3062,7 @@ def mysql_con(response):
 
                 try:
                     with engine.connect() as connection:
-                        data_a_cloud_sql = [{'From Service':'Covid','Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                        data_a_cloud_sql = [{'From Service':'Covid','Date':(datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                                             'User Id':data['id'],'User Name':data['name'],
                                             'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
                                             'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
@@ -2818,7 +3074,7 @@ def mysql_con(response):
                                             'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                             'Porn':json_respuesta['Porn'],
                                             'Live':json_respuesta['Live'],
-                                            'Service':json_respuesta['Service']}]
+                                            'Service':json_respuesta['Service'],'Message':json_respuesta['msg']}]
                         query_cloud = db.insert(result_data)
                         ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
                         print('Se logró')
@@ -2835,7 +3091,7 @@ def mysql_con(response):
     elif from_service == 'premier' or from_service == 'Re:Explicit' or from_service == 'Explicit' or from_service == 'face recognition':
         try:
             with engine.connect() as connection:
-                data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                                     'User Id':data['id'],'User Name':data['name'],
                                     'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
                                     'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
@@ -2848,7 +3104,7 @@ def mysql_con(response):
                                     'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                                     'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                     'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
-                                    'Object':obj,'Service':json_respuesta['Service']}]
+                                    'Object':obj,'Service':json_respuesta['Service'],'Message':json_respuesta['msg']}]
                 query_cloud = db.insert(result_data)
                 ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
         except Exception as e:
@@ -2856,7 +3112,7 @@ def mysql_con(response):
 
             try:
                 with engine.connect() as connection:
-                    data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+                    data_a_cloud_sql = [{'From Service':from_service,'Date':(datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                                         'User Id':data['id'],'User Name':data['name'],
                                         'Mission Id':data['id_mission'],'Mission Name':data['mission_name'],
                                         'User Latitude':data['Location_latitude'],'User Longitude':data['Location_longitude'],
@@ -2869,7 +3125,7 @@ def mysql_con(response):
                                         'Target_Object':validar2 + ' o ' + validar5,'Detected Object(s)':detected_obj,
                                         'Location':json_respuesta['Location'],'Time':json_respuesta['Time'],
                                         'Porn':json_respuesta['Porn'],'Live':Service[3],'Scene':Service[1],'Extra':Service[2],
-                                        'Object':obj,'Service':json_respuesta['Service']}]
+                                        'Object':obj,'Service':json_respuesta['Service'],'Message':json_respuesta['msg']}]
                     query_cloud = db.insert(result_data)
                     ResultProxy = connection.execute(query_cloud,data_a_cloud_sql)
                     print('Se logró')
