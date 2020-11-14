@@ -175,6 +175,7 @@ def loadmodel():
     global body_covid
     global body_taifelds
     global body_hidrosina
+    global body_rechazada
     global body_hidrosina_alerta
     global body_taifelds_disfruta
     global transfmr
@@ -185,6 +186,7 @@ def loadmodel():
     body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
     body_hidrosina = "Hay una nueva misión de Hidrosina para validar en https://gchgame.web.app/ con número de Id: "
     body_hidrosina_alerta = "Hay una alerta de seguridad sanitaria por falta de cubrebocas en la estación con identificador HD "
+    body_rechazada = "ALERTA hay una captura de pago rechazada, no aplica ID "
 
     metadata = db.MetaData()
     result_data = db.Table('result_data', metadata, autoload=True, autoload_with=engine)
@@ -2596,7 +2598,7 @@ def hidrosina_service():
                     print(e)
                     pass
 
-                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':0,'Url_themask':imagen_final(image_path),'url_thumbnail':video_to_thumbnail_url(video_path),'msg':'¡Misión completada! Felicitaciones Agente'}
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':0,'Url_themask':image_path,'url_thumbnail':video_to_thumbnail_url(video_path),'msg':'¡Misión completada! Felicitaciones Agente'}
                 return jsonify(json_respuesta)
 
             else:
@@ -2962,6 +2964,96 @@ def taifelds_cul_map():
     from_service = 'get'
     return render_template('index_cul.html')
 
+@app.route('/money-locator',methods=['POST'])
+def money_locator():
+    global from_service
+    from_service = 'Money-locator'
+    data = request.json
+    metodo = data['method'] #Taifelds Hidrosina General
+    hidrosina_flag = metodo == 'Hidrosina'
+    taifelds_flag = metodo == 'Taifelds'
+    general_flag = metodo == 'General'
+    user_pos = (data['Location_latitude'],data['Location_longitude'])
+
+    if hidrosina_flag or general_flag:
+        try:
+            with engine_misions.connect() as connection:
+                results_hidrosina = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    results_hidrosina = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall()
+            except Exception as e:
+                print(e)
+                json_respuesta = {'Service':False,'msg':'Error de conexión, inténtalo nuevamente','Latitude':0,'Longitude':0}
+                return jsonify(json_respuesta)
+
+        if len(results_hidrosina) != 0:
+            df = pd.DataFrame(results_hidrosina)
+            df.columns = results_hidrosina[0].keys()
+            lat_hidrosina, lng_hidrosina = df['Latitude'].tolist(), df['Longitude'].tolist()
+        else:
+            lat_hidrosina, lng_hidrosina = [], []
+    else:
+        lat_hidrosina, lng_hidrosina = [], []
+
+
+    if taifelds_flag or general_flag:
+        try:
+            with engine_misions.connect() as connection:
+                results_taifelds2 = connection.execute(db.select([missions_taifelds2]).where(missions_taifelds2.c.Flag != 'Yes')).fetchall()
+                results_taifelds = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag != 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    results_taifelds2 = connection.execute(db.select([missions_taifelds2]).where(missions_taifelds2.c.Flag != 'Yes')).fetchall()
+                    results_taifelds = connection.execute(db.select([missions_taifelds]).where(missions_taifelds.c.Flag != 'Yes')).fetchall()
+            except Exception as e:
+                print(e)
+                json_respuesta = {'Service':False,'msg':'Error de conexión, vuelve a intentarlo por favor','Latitude':0,'Longitude':0}
+                return jsonify(json_respuesta)
+
+        if len(results_taifelds2) != 0:
+            df = pd.DataFrame(results_taifelds2)
+            df.columns = results_taifelds2[0].keys()
+            lat_taifelds2, lng_taifelds2 = df['Latitude'].tolist(), df['Longitude'].tolist()
+        else:
+            lat_taifelds2, lng_taifelds2 = [], []
+
+        if len(results_taifelds) != 0:
+            df = pd.DataFrame(results_taifelds)
+            df.columns = results_taifelds[0].keys()
+            lat_taifelds, lng_taifelds = df['Latitude'].tolist(), df['Longitude'].tolist()
+        else:
+            lat_taifelds, lng_taifelds = [], []
+
+    else:
+        lat_taifelds2, lng_taifelds2 = [], []
+        lat_taifelds, lng_taifelds = [], []
+
+    lat_taifelds.extend(lat_taifelds2)
+    lat_hidrosina.extend(lat_taifelds)
+    lat = lat_hidrosina
+    if len(lat) == 0:
+        json_respuesta = {'Service':False,'msg':'Lo sentimos, ya no hay ubicaciones disponibles para ganar dinero en esta temporada, tendremos más pronto','Latitude':0,'Longitude':0}
+        return jsonify(json_respuesta)
+    lng_taifelds.extend(lng_taifelds2)
+    lng_hidrosina.extend(lng_taifelds)
+    lng = lng_hidrosina
+
+    distancias = []
+    for t, g in zip(lat,lng):
+        distancias.append(geodesic(user_pos,(t,g)).meters)
+    j = np.argmin(distancias)
+    lat_out = lat[j]
+    lng_out = lng[j]
+
+    json_respuesta = {'Service':True,'msg':'Listo Agente, la siguiente ubicación para ganar dinero te espera...','Latitude':lat_out,'Longitude':lng_out}
+    return jsonify(json_respuesta)
+
+
 @app.route('/imagen-to-texto', methods=['POST'])
 def img2text():
     global from_service
@@ -2985,6 +3077,22 @@ def imgqr2text():
 
 @app.after_request
 def mysql_con(response):
+
+    if (from_service == 'Taifelds' or from_service == 'Hidrosina') and json_respuesta['Service'] == False:
+        try:
+
+            url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
+
+            payload = {'id_tienda':0,'message':body_rechazada,'service':from_service,'subject':'ALERTA - CAPTURA RECHAZADA'}
+            headers = {'Content-Type': 'application/json'}
+
+            requests.request("POST", url, headers=headers, data = json.dumps(payload))
+
+        except Exception as e:
+            print(e)
+            pass
+
+
     #Query a Cloud SQL
     if from_service == 'Taifelds' or from_service == 'Taifelds-disfruta' or from_service == 'Hidrosina':
 
