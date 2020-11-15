@@ -34,3 +34,4 @@ torchvision==0.7.0+cu101
 google-cloud-vision
 pygsheets
 pyzbar
+folium

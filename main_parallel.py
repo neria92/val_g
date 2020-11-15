@@ -42,11 +42,13 @@ import sys
 import dlib
 import json
 import ffmpeg
+import folium
 import pandas as pd
 import face_recognition
 import sqlalchemy as db
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from folium.plugins import MarkerCluster
 from random import randint
 from Utils import label_map_util
 from Utils import visualization_utils as vis_util
@@ -2611,6 +2613,71 @@ def hidrosina_service():
         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'No te encuentras en una ubicación u horario disponible o esta estación ha sido completada en este periodo'}
         return jsonify(json_respuesta)
 
+@app.route('/hidrosina-map', methods=['GET'])
+def hidrosina_map():
+    global from_service
+    from_service = 'get'
+
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_hidrosina])).fetchall()
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_hidrosina])).fetchall()
+        except Exception as e:
+            print(e)
+            return render_template('hidrosina_map.html')
+
+    if len(results) == 0:
+        m = folium.Map(location=[23.5929292,-102.3634602], zoom_start=6)
+        m.save('templates/hidrosina_map.html')
+        return render_template('hidrosina_map.html')
+
+    df = pd.DataFrame(results)
+    df.columns = results[0].keys()
+    df_hidro = df
+
+    m = folium.Map(location=[23.5929292,-102.3634602], zoom_start=6)
+    mc = MarkerCluster()
+
+    tooltip = 'Da click para ver los horarios Disponibles'
+    row_count = 0
+    popup_list = []
+    for row in df_hidro.itertuples():
+        row_count += 1
+
+        if row.Flag == 'No':
+            popup_list.append(row.Horario_Inf_Timestamp)
+            
+        if row_count == 2:
+            row_count = 0
+            if popup_list != []:
+                if len(popup_list) == 2:
+                    popup = '<strong>Matutino y Vespertino</strong>'
+                elif popup_list == [0]:
+                    popup = '<strong>Matutino</strong>'
+                else:
+                    popup = '<strong>Vespertino</strong>'
+
+                # Create markers
+                logo_gas = folium.features.CustomIcon('images/gasolinera.png', icon_size=(25, 25))
+                folium.Marker([row.Latitude,row.Longitude],
+                                popup=popup,
+                                tooltip= 'HD-' + row.Name + ' ' + tooltip,
+                                icon = logo_gas).add_to(mc)
+                popup_list = []
+            else:
+                continue
+        else:
+            continue
+
+    m.add_child(mc)
+    m.save('templates/hidrosina_map.html')
+
+    return render_template('hidrosina_map.html')
+
 @app.route('/taifelds-disfruta', methods=['POST'])
 def taifelds_disfruta_service():
     global data
@@ -3050,9 +3117,8 @@ def money_locator():
     lat_out = lat[j]
     lng_out = lng[j]
 
-    json_respuesta = {'Service':True,'msg':'Listo Agente, la siguiente ubicación para ganar dinero te espera...','Latitude':lat_out,'Longitude':lng_out}
+    json_respuesta = {'Service':True,'msg':'Listo Agente, la siguiente ubicación para ganar dinero te espera...','Latitude':str(lat_out),'Longitude':str(lng_out)}
     return jsonify(json_respuesta)
-
 
 @app.route('/imagen-to-texto', methods=['POST'])
 def img2text():
