@@ -49,6 +49,7 @@ import sqlalchemy as db
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from folium.plugins import MarkerCluster
+from folium.plugins import LocateControl
 from random import randint
 from Utils import label_map_util
 from Utils import visualization_utils as vis_util
@@ -67,6 +68,7 @@ import torchvision.models as models
 from torchvision import transforms as trn
 from torch.nn import functional as F
 from pyzbar.pyzbar import decode
+import googlemaps
 
 
 
@@ -83,6 +85,8 @@ app = Flask(__name__)
 
 engine = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database}?unix_socket=/cloudsql/{cloud_sql_connection_name}')
 engine_misions = db.create_engine(f'mysql+pymysql://{user}:{password}@/{database_misions}?unix_socket=/cloudsql/{cloud_sql_connection_name}')
+
+gmaps = googlemaps.Client(key=os.environ.get("GMAPS_KEY"))
 
 
 # hacky way to deal with the Pytorch 1.0 update
@@ -179,6 +183,11 @@ def loadmodel():
     global body_hidrosina
     global body_rechazada
     global body_hidrosina_alerta
+    global body_hidrosina_alerta_qr
+    global body_hidrosina_alerta_precios
+    global body_hidrosina_alerta_ticket
+    global body_hidrosina_alerta_100
+    global body_hidrosina_alerta_calificacion_baja
     global body_taifelds_disfruta
     global transfmr
 
@@ -188,6 +197,11 @@ def loadmodel():
     body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
     body_hidrosina = "Hay una nueva misión de Hidrosina para validar en https://gchgame.web.app/ con número de Id: "
     body_hidrosina_alerta = "Hay una alerta de seguridad sanitaria por falta de cubrebocas en la estación con identificador HD "
+    body_hidrosina_alerta_precios = "Hay una alerta de letrero de precios apagados en la estación con identificador HD "
+    body_hidrosina_alerta_ticket = "Hay una alerta de ticket incorrecto en la estación con identificador HD "
+    body_hidrosina_alerta_qr = "Hay una alerta de código QR ilegible en la estación con identificador HD "
+    body_hidrosina_alerta_100 = "Hay una alerta de calificación poco confiable en la estación con identificador HD "
+    body_hidrosina_alerta_calificacion_baja = "Hay una alerta de baja calificación en la estación con identificador HD "
     body_rechazada = "ALERTA hay una captura de pago rechazada, no aplica ID "
 
     metadata = db.MetaData()
@@ -1329,6 +1343,23 @@ def detect_text_uri(uri):
     full_text = ''.join(text_list)
     return full_text
 
+def detect_text_local(path):
+    """"Detects text in the file."""
+    import io
+    client = vision.ImageAnnotatorClient()
+    with io.open(path, 'rb') as image_file:
+        content = image_file.read()
+    image = vision.Image(content=content)
+
+    response = client.text_detection(image=image)
+    texts = response.text_annotations
+    text_list = []
+    for text in texts:
+      #print(text.description)
+      text_list.append(text.description)
+    full_text = ''.join(text_list)
+    return full_text
+
 def find_fecha_hora(full_text):
     fecha_list = re.findall('\d{4}[/\-\s]\d\d[/\-\s]\d\d',full_text)
     if len(fecha_list) == 0:
@@ -1426,7 +1457,7 @@ def url_qr_2_text(url):
         response = requests.get(url)
         img = Image.open(BytesIO(response.content))
     except:
-        return 'Corrupted Image'
+        return 'No se pudo leer nombre de ticket, falla de imagen'
     try:
         code = decode(img)
         str_data = code[0].data
@@ -1436,7 +1467,10 @@ def url_qr_2_text(url):
         message = message_bytes.decode('ascii')
         return message
     except:
-        return 'Impossible to read QR Code'
+        return 'No se pudo leer nombre de ticket'
+
+def enviar_mail(url,headers,payload):
+  requests.request("POST", url, headers=headers, data = json.dumps(payload))
 
 @app.route('/', methods=['POST'])
 def location_time_validate():
@@ -2370,69 +2404,7 @@ def hidrosina_service():
     data = request.json
     bandera = request.args.get('re_data')
     video_path = ''
-
-    if bandera != 'yes':
-        data['url'] = orientation_fix_function(data['url'])
-
-    if bandera == 'yes':
-        return
-        try:
-            with engine_misions.connect() as connection:
-                results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag == 'Pending')).fetchall()
-        except Exception as e:
-            print(e)
-            try:
-                with engine_misions.connect() as connection:
-                    results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag == 'Pending')).fetchall()
-            except Exception as e:
-                print(e)
-                return jsonify({'Service':False})
-        if len(results) == 0:
-            return jsonify({'Service':False})
-        df = pd.DataFrame(results)
-        df.columns = results[0].keys()
-        lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
-
-        id_tienda_salida = data['Id_Store']
-        if id_tienda_salida not in ids:
-            return jsonify({'Service':False})
-
-        status = data['Status']
-        user_id = data['User_Id']
-        user_lat = data['User_Latitude']
-        user_lng = data['User_Longitude']
-        url_p = data['Url_Photo']
-        url_v = data['Url_Video']
-        video_path = data['Url_Video']
-        miss_id = data['Mission_Id']
-
-        try:
-            with engine_misions.connect() as connection:
-                connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda_salida).values(Flag = status,
-                    Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
-                    User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
-                    Url_Video = url_v, Mission_Id = miss_id))
-        except Exception as e:
-            print(e)
-            try:
-                with engine_misions.connect() as connection:
-                    connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda_salida).values(Flag = status,
-                        Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
-                        User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = url_p,
-                        Url_Video = url_v, Mission_Id = miss_id))
-            except Exception as e:
-                print(e)
-                return jsonify({'Service':False})
-
-        
-        return jsonify({'Service':True})
-
-    elif bandera != None:
-        print('Error de request')
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Error en la misión, contacta a Soporte Gotchu!'}
-        return jsonify(json_respuesta)
-    else:
-        pass
+    data['url'] = orientation_fix_function(data['url'])
 
     try:
         with engine_misions.connect() as connection:
@@ -2455,8 +2427,7 @@ def hidrosina_service():
 
     df = pd.DataFrame(results)
     df.columns = results[0].keys()
-    lat , lng, address, ids, names_hd = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist(), df['Name'].tolist()
-    #flags = df['Flag'].tolist() ##################TEMP
+    lat , lng, address, ids, names_hd, zonas = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist(), df['Name'].tolist(), df['Zona'].tolist()
     hora_inf, hora_sup = df['Horario_Inf_Timestamp'], df['Horario_Sup_Timestamp']
     user_pos = (data['Location_latitude'],data['Location_longitude'])
 
@@ -2471,19 +2442,31 @@ def hidrosina_service():
         video_path = ''
         print(e)
 
-    full_text = detect_text_uri(image_path)
+    # full_text = detect_text_uri(image_path)
+
+    ticket_image_local_path = url_to_image(image_path)
+    full_text = detect_text_local(ticket_image_local_path)
+
+    if full_text == '':
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':1,'Url_themask':'','url_thumbnail':'','msg':'Tu captura ha sido seleccionada para ser revisada por el equipo de Gotchu! Pronto será calificada. Sigue ganando con Gotchu!'}
+        return jsonify(json_respuesta)
+        
     codigo = find_codigo_factura(full_text)
     no_ticket = find_no_ticket(full_text)
     fecha, hora = find_fecha_hora(full_text)
+
+    # fecha = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d")###DEV
+    # hora = (datetime.utcnow() - timedelta(hours=6)).strftime("%H:%M")###DEV
+
     try:
         fecha_timestamp, hora_timestamp = fecha_hora_2_timestamp(fecha,hora)
     except Exception as e:
         print(e,fecha,hora)
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu!'}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu! al teléfono 55 7161 7864'}
         return jsonify(json_respuesta)
 
     if fecha == '1970-01-01' or hora == '00:00':
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu!'}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu! al teléfono 55 7161 7864'}
         return jsonify(json_respuesta)
 
     # if hora_timestamp < 21600:
@@ -2501,7 +2484,7 @@ def hidrosina_service():
     fecha_hoy_str_real = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d")
 
     if fecha_hoy_str_real != fecha_hoy_str:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu!'}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Tu foto no cumple con los requerimientos o está mal enfocada, vuelve a intentarlo, si crees que esto es un error comunícate con soporte Gotchu! al teléfono 55 7161 7864'}
         return jsonify(json_respuesta)
 
     if len(horarios_vs_real_index) > 0:
@@ -2512,10 +2495,11 @@ def hidrosina_service():
         mission_target_time = data['Target_time_mission']
 
         if (user_time<=mission_target_time):
-            if no_ticket not in tickets:
+            if True: #no_ticket not in tickets:##########DEV
                 j = horarios_vs_real_index[0]
                 id_tienda = ids[j]
                 name_hd = names_hd[j]
+                zona = zonas[j]
                 data['Location_mission_latitude'] = lat[j]
                 data['Location_mission_longitude'] = lng[j]
                 address_hidro = address[j]
@@ -2524,7 +2508,10 @@ def hidrosina_service():
                 user_lng = user_pos[1]
                 miss_id = data['id_mission']
                 qr_decoded = url_qr_2_text(image_path)
-                alerta_sanitaria = 'ninguna'
+                alerta_sanitaria = 'Ninguna'
+                alerta_precios_apagados = 'No'
+                alerta_ticket_incorrecto = 'No'
+                score = 0
                 try:
                     hash_typeform = data['hash_typeform']
                 except KeyError as e:
@@ -2543,19 +2530,166 @@ def hidrosina_service():
                     if len(df_row) == 0:
                         print('Hash no encontrado')
                     else:
+
                         alerta_cubrebocas = df_row['¿Qué no tenía el despachador?'].to_list()[0]
+
                         if 'cubrebocas' in alerta_cubrebocas:
                             alerta_sanitaria = 'cubrebocas'
-                            try:
-                                url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta"
+                            if zona == 'Metro':
+                                try:
+                                    fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                    nombre_despachador = qr_decoded
+                                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-metro"
 
-                                payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta,'service':from_service,'subject':'ALERTA DE SEGURIDAD SANITARIA'}
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE SEGURIDAD SANITARIA'}
+                                    headers = {'Content-Type': 'application/json'}
+
+                                    mail_process1 = Process(target = enviar_mail, args = (url,headers,payload))
+                                    mail_process1.start()
+
+                                except Exception as e:
+                                    print(e,'fallo email alerta')
+                                    pass
+                            else:
+                                try:
+                                    fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                    nombre_despachador = qr_decoded
+                                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-provincia"
+
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE SEGURIDAD SANITARIA'}
+                                    headers = {'Content-Type': 'application/json'}
+
+                                    mail_process1 = Process(target = enviar_mail, args = (url,headers,payload))
+                                    mail_process1.start()
+
+                                except Exception as e:
+                                    print(e,'fallo email alerta')
+                                    pass
+                        
+                        if df_row['La estación, ¿lucía limpia, bien iluminada y con el letrero de precios encendido?'].values == 'FALSE':
+                            alerta_precios_apagados = 'Si'
+                            if zona == 'Metro':
+                                try:
+                                    fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                    nombre_despachador = qr_decoded
+                                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-metro"
+
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_precios,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE LETRERO DE PRECIOS APAGADO'}
+                                    headers = {'Content-Type': 'application/json'}
+
+                                    mail_process6 = Process(target = enviar_mail, args = (url,headers,payload))
+                                    mail_process6.start()
+
+                                except Exception as e:
+                                    print(e,'fallo email alerta')
+                                    pass
+                            else:
+                                try:
+                                    fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                    nombre_despachador = qr_decoded
+                                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-provincia"
+
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_precios,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE LETRERO DE PRECIOS APAGADO'}
+                                    headers = {'Content-Type': 'application/json'}
+
+                                    mail_process6 = Process(target = enviar_mail, args = (url,headers,payload))
+                                    mail_process6.start()
+
+                                except Exception as e:
+                                    print(e,'fallo email alerta')
+                                    pass
+                        
+                        if df_row['¿Entregó el ticket correcto?'].values == 'FALSE':
+                            alerta_ticket_incorrecto = 'Si'
+                            if zona == 'Metro':
+                                try:
+                                    fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                    nombre_despachador = qr_decoded
+                                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-metro"
+
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_ticket,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE TICKET INCORRECTO'}
+                                    headers = {'Content-Type': 'application/json'}
+
+                                    mail_process6 = Process(target = enviar_mail, args = (url,headers,payload))
+                                    mail_process6.start()
+
+                                except Exception as e:
+                                    print(e,'fallo email alerta')
+                                    pass
+                            else:
+                                try:
+                                    fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                    nombre_despachador = qr_decoded
+                                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-provincia"
+
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_ticket,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE TICKET INCORRECTO'}
+                                    headers = {'Content-Type': 'application/json'}
+
+                                    mail_process6 = Process(target = enviar_mail, args = (url,headers,payload))
+                                    mail_process6.start()
+
+                                except Exception as e:
+                                    print(e,'fallo email alerta')
+                                    pass
+
+                        if 'pudo leer' in qr_decoded:
+
+                            try:
+                                fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-qr-ilegible"
+
+                                payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_qr,'service':from_service,'fecha_incidente':fecha_incidente,'url_ticket':image_path,'subject':'ALERTA DE QR ILEGIBLE'}
                                 headers = {'Content-Type': 'application/json'}
 
-                                response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
+                                mail_process7 = Process(target = enviar_mail, args = (url,headers,payload))
+                                mail_process7.start()
+
                             except Exception as e:
                                 print(e,'fallo email alerta')
                                 pass
+
+
+                        df_row_examen = df_row[['La estación, ¿lucía limpia, bien iluminada y con el letrero de precios encendido?',
+                                                '¿Había despachadores indicando el lugar disponible para cargar combustible?',
+                                                'Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes protectores?',
+                                                'El despachador ¿dio la bienvenida?',
+                                                '¿Preguntó la cantidad, tipo de combustible a cargar y forma de pago?',
+                                                '¿Mostró que la bomba estuviera en ceros antes de iniciar la carga?',
+                                                '¿Ofreció algún producto periférico y limpieza de parabrisas?',
+                                                '¿Tenía puesto el gafete en un lugar visible?',
+                                                '¿Fue amable y cordial al atenderle?',
+                                                '¿Entregó el ticket correcto?']]
+                        df_row_examen = df_row_examen.replace(['FALSE','TRUE'],[False,True]) * 1
+                        puntajes = pd.Series([35,25,40,20,15,10,15,10,20,10])
+                        calificacion = df_row_examen.values @ puntajes
+                        calificacion = int(calificacion / 2)
+                        score = calificacion
+
+                        if calificacion == 100:
+                            try:
+                                url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta"
+
+                                payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_100,'service':from_service,'subject':'ALERTA DE CALIFICACION POCO CONFIABLE'}
+                                headers = {'Content-Type': 'application/json'}
+
+                                mail_process2 = Process(target = enviar_mail, args = (url,headers,payload))
+                                mail_process2.start()
+                            except Exception as e:
+                                print(e,'fallo email alerta')
+                                pass
+                        if calificacion < 50:
+                            try:
+                                url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta"
+
+                                payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_calificacion_baja,'service':from_service,'subject':'ALERTA DE CALIFICACION BAJA'}
+                                headers = {'Content-Type': 'application/json'}
+
+                                mail_process3 = Process(target = enviar_mail, args = (url,headers,payload))
+                                mail_process3.start()
+                            except Exception as e:
+                                print(e,'fallo email alerta')
+                                pass
+
 
                 except Exception as e:
                     print('Falló Sheets',e)
@@ -2566,8 +2700,9 @@ def hidrosina_service():
                         connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda).values(Flag = 'Yes',
                             Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Fecha_Hora = fecha + ' ' + hora,
                             User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = image_path,
-                            Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform,
-                            No_Ticket = no_ticket, QR_Decoded = qr_decoded, Alerta = alerta_sanitaria))
+                            Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform, Score = score,
+                            No_Ticket = no_ticket, QR_Decoded = qr_decoded, Alerta = alerta_sanitaria, Alerta_precios = alerta_precios_apagados,
+                            Alerta_ticket = alerta_ticket_incorrecto))
                         if (datetime.utcnow() - timedelta(hours=6)).day < 15:
                             connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Address == address_hidro).values(Flag = 'Yes'))
                 except Exception as e:
@@ -2577,8 +2712,9 @@ def hidrosina_service():
                             connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda).values(Flag = 'Yes',
                                 Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Fecha_Hora = fecha + ' ' + hora,
                                 User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = image_path,
-                                Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform,
-                                No_Ticket = no_ticket, QR_Decoded = qr_decoded))
+                                Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform, Score = score,
+                                No_Ticket = no_ticket, QR_Decoded = qr_decoded, Alerta = alerta_sanitaria, Alerta_precios = alerta_precios_apagados,
+                                Alerta_ticket = alerta_ticket_incorrecto))
                         if (datetime.utcnow() - timedelta(hours=6)).day < 15:
                             connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Address == address_hidro).values(Flag = 'Yes'))
                     except Exception as e:
@@ -2594,7 +2730,8 @@ def hidrosina_service():
                     payload = {'id_tienda':id_tienda,'message':body_hidrosina,'service':from_service,'subject':'Hidrosina - NUEVA MISION'}
                     headers = {'Content-Type': 'application/json'}
 
-                    response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
+                    mail_process4 = Process(target = enviar_mail, args = (url,headers,payload))
+                    mail_process4.start()
 
                 except Exception as e:
                     print(e)
@@ -2610,14 +2747,15 @@ def hidrosina_service():
             json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Esta misión ha expirado'}
             return jsonify(json_respuesta)
     else:
-        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'No te encuentras en una ubicación u horario disponible o esta estación ha sido completada en este periodo'}
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'No te encuentras en una ubicación u horario disponible o esta estación ha sido completada en este periodo, si crees que esto es un error comunícate con soporte Gotchu! al teléfono 55 7161 7864'}
         return jsonify(json_respuesta)
 
 @app.route('/hidrosina-map', methods=['GET'])
 def hidrosina_map():
     global from_service
     from_service = 'get'
-
+    lat_new_marker = request.args.get('lat')
+    lng_new_marker = request.args.get('long')
     try:
         with engine_misions.connect() as connection:
             results = connection.execute(db.select([missions_hidrosina])).fetchall()
@@ -2633,7 +2771,7 @@ def hidrosina_map():
     if len(results) == 0:
         m = folium.Map(location=[23.5929292,-102.3634602], zoom_start=6)
         m.save('templates/hidrosina_map.html')
-        return render_template('hidrosina_map.html')
+        return m._repr_html_()
 
     df = pd.DataFrame(results)
     df.columns = results[0].keys()
@@ -2641,6 +2779,13 @@ def hidrosina_map():
 
     m = folium.Map(location=[23.5929292,-102.3634602], zoom_start=6)
     mc = MarkerCluster()
+
+    if lat_new_marker != None and lng_new_marker != None:
+        popup_test = 'Hola, atrás de ti'
+        tooltip_test = 'Da clic para saber más'
+        folium.Marker([lat_new_marker,lng_new_marker],
+                                popup=popup_test,
+                                tooltip=tooltip_test).add_to(mc)
 
     tooltip = 'Da click para ver los horarios Disponibles'
     row_count = 0
@@ -2674,9 +2819,10 @@ def hidrosina_map():
             continue
 
     m.add_child(mc)
+    LocateControl(auto_start=True,strings={'title': 'Ve tu ubicación actual','popup':'Estás aquí'}).add_to(m)
     m.save('templates/hidrosina_map.html')
 
-    return render_template('hidrosina_map.html')
+    return m._repr_html_()
 
 @app.route('/taifelds-disfruta', methods=['POST'])
 def taifelds_disfruta_service():
@@ -3140,6 +3286,22 @@ def imgqr2text():
     json_respuesta = {'Texto':texto_qr}
     return jsonify(json_respuesta)
 
+CORS(app)
+@app.route('/coords-to-address', methods=['POST'])
+def coords2address():
+    global from_service
+    from_service = 'coords2address'
+    data = request.json
+
+    i,j = data['Location_latitude'],data['Location_longitude']
+    try:
+        direccion_dict = gmaps.reverse_geocode((i,j))
+        direccion = direccion_dict[0]['formatted_address']
+    except:
+        direccion =  'No se pudo obtener direccion'
+    json_respuesta = {'Address':direccion}
+    return jsonify(json_respuesta)
+
 
 @app.after_request
 def mysql_con(response):
@@ -3152,7 +3314,8 @@ def mysql_con(response):
             payload = {'id_tienda':0,'message':body_rechazada,'service':from_service,'subject':'ALERTA - CAPTURA RECHAZADA'}
             headers = {'Content-Type': 'application/json'}
 
-            requests.request("POST", url, headers=headers, data = json.dumps(payload))
+            mail_process5 = Process(target = enviar_mail, args = (url,headers,payload))
+            mail_process5.start()
 
         except Exception as e:
             print(e)

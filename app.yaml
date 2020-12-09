@@ -12,6 +12,7 @@ env_variables:
   DB_NAME_MISIONS: misiones
   PASS: Gotchu1234?
   ACC: gotchu.messages@gmail.com
+  GMAPS_KEY: AIzaSyAi21z3jIuTM_363sCqnQBQsgkvpI2qZb8
 liveness_check:
   initial_delay_sec: 3600
 readiness_check:
