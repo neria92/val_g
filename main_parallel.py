@@ -170,6 +170,7 @@ def loadmodel():
     global masked_url
     global result_data
     global missions_taifelds
+    global missions_santory
     global missions_taifelds2
     global missions_hidrosina
     global missions_taifelds_disfruta
@@ -180,6 +181,7 @@ def loadmodel():
     global receivers
     global body_covid
     global body_taifelds
+    global body_santory
     global body_hidrosina
     global body_rechazada
     global body_hidrosina_alerta
@@ -193,6 +195,7 @@ def loadmodel():
 
     receivers = ['gotchudl@gmail.com','back.ght.001@gmail.com','medel@cimat.mx']
     body_taifelds = "Hay una nueva misión de Taifelds para validar en https://gchgame.web.app/ con número de tienda: "
+    body_santory = "Hay una nueva misión de Santory para validar en https://gchgame.web.app/ con número de tienda: "
     body_taifelds_disfruta = "Hay una nueva misión de Disfruta y Gana para validar en https://gchgame.web.app/ con número de tienda: "
     body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
     body_hidrosina = "Hay una nueva misión de Hidrosina para validar en https://gchgame.web.app/ con número de Id: "
@@ -211,6 +214,7 @@ def loadmodel():
     missions_hidrosina = db.Table('hidrosina', metadata, autoload=True, autoload_with=engine_misions)
     missions_taifelds_disfruta = db.Table('taifelds_disfruta', metadata, autoload=True, autoload_with=engine_misions)
     missions_covid = db.Table('covid', metadata, autoload=True, autoload_with=engine_misions)
+    missions_santory = db.Table('santory', metadata, autoload=True, autoload_with=engine_misions)
 
     # load the model
     scene_model_365 = load_scene_model()
@@ -2824,6 +2828,130 @@ def hidrosina_map():
 
     return m._repr_html_()
 
+@app.route('/santory', methods=['POST'])
+def taifelds_service():
+    global data
+    global json_respuesta
+    global bandera
+    global from_service
+
+    from_service = 'Santory'
+
+    data = request.json
+    bandera = request.args.get('re_data')
+    video_path = ''
+
+    if bandera != 'yes':
+        data['url'] = orientation_fix_function(data['url'])
+
+    elif bandera != None:
+        print('Error de request')
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Ocurrió un error inesperado con esta misión, por favor repórtalo a Soporte Gotchu!'}
+        return jsonify(json_respuesta)
+    else:
+        pass
+
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_santory]).where(missions_santory.c.Flag != 'Yes')).fetchall()
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_santory]).where(missions_santory.c.Flag != 'Yes')).fetchall()
+        except Exception as e:
+            print(e)
+            json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Ocurrió un error inesperado, vuelve a intentarlo por favor'}
+            mission_message = message_pay_service(json_respuesta)
+            json_respuesta['msg'] = mission_message
+            return jsonify(json_respuesta)
+
+    if len(results) == 0:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Lo sentimos, ya no hay ubicaciones disponibles para esta misión'}
+        return jsonify(json_respuesta)
+
+    df = pd.DataFrame(results)
+    df.columns = results[0].keys()
+    lat , lng, address, ids = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist()
+    user_pos = (data['Location_latitude'],data['Location_longitude']) 
+    
+    image_path = data['url']
+
+    distancias = []
+    for t, g in zip(lat,lng):
+        distancias.append(geodesic(user_pos,(t,g)).meters)
+    if min(distancias) < 200:
+        
+        start_date = datetime.strptime(data['Start_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        end_date = datetime.strptime(data['End_Date_mission'], '%Y-%m-%d %H:%M:%S.%f')
+        user_time = (end_date - start_date).total_seconds()
+        mission_target_time = data['Target_time_mission']
+
+        if (user_time<=mission_target_time):
+            if liveness(image_path):
+                j = np.argmin(distancias)
+                direc = address[j]
+                id_tienda = ids[j]
+                data['Location_mission_latitude'] = lat[j]
+                data['Location_mission_longitude'] = lng[j]
+                user_id = data['id']
+                user_lat = user_pos[0]
+                user_lng = user_pos[1]
+                user_id = data['id']
+                miss_id = data['id_mission']
+                hash_typeform = data['hash_typeform']
+
+                try:
+                    with engine_misions.connect() as connection:
+                        connection.execute(missions_santory.update().where(missions_santory.c.Id == id_tienda).values(Flag = 'Yes',
+                            Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
+                            User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = image_path,
+                            Mission_Id = miss_id, Hash_typeform = hash_typeform))
+                except Exception as e:
+                    print(e)
+                    try:
+                        with engine_misions.connect() as connection:
+                            connection.execute(missions_santory.update().where(missions_santory.c.Id == id_tienda).values(Flag = 'Yes',
+                                Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
+                                User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = image_path,
+                                Mission_Id = miss_id, Hash_typeform = hash_typeform))
+                    except Exception as e:
+                        print(e)
+                        return jsonify({'Service':False})
+                
+                try:
+
+                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
+
+                    payload = {'id_tienda':id_tienda,'message':body_santory,'service':from_service,'subject':'Santory - NUEVA MISION'}
+                    headers = {'Content-Type': 'application/json'}
+
+                    response = requests.request("POST", url, headers=headers, data = json.dumps(payload))
+
+                except Exception as e:
+                    print(e)
+                    pass
+                json_respuesta = {'Location':True,'Time':True,'Service':True,'Live':True,'Porn':False,'Id':0,'Url_themask':image_path,'url_thumbnail':'','msg':''}
+                json_respuesta['msg'] = '¡Misión completada! Felicitaciones Agente'
+                return jsonify(json_respuesta)
+
+            else:
+                json_respuesta = {'Location':True,'Time':True,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+                mission_message = message_pay_service(json_respuesta)
+                json_respuesta['msg'] = mission_message
+                return jsonify(json_respuesta)
+        else:
+            json_respuesta = {'Location':True,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+            mission_message = message_pay_service(json_respuesta)
+            json_respuesta['msg'] = mission_message
+            return jsonify(json_respuesta)
+    else:
+        json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':''}
+        mission_message = message_pay_service(json_respuesta)
+        json_respuesta['msg'] = mission_message
+        return jsonify(json_respuesta)
+
+
 @app.route('/taifelds-disfruta', methods=['POST'])
 def taifelds_disfruta_service():
     global data
@@ -3306,7 +3434,7 @@ def coords2address():
 @app.after_request
 def mysql_con(response):
 
-    if (from_service == 'Taifelds' or from_service == 'Hidrosina') and json_respuesta['Service'] == False:
+    if (from_service == 'Taifelds' or from_service == 'Hidrosina' or from_service == 'Santory') and json_respuesta['Service'] == False:
         try:
 
             url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender"
@@ -3323,7 +3451,7 @@ def mysql_con(response):
 
 
     #Query a Cloud SQL
-    if from_service == 'Taifelds' or from_service == 'Taifelds-disfruta' or from_service == 'Hidrosina':
+    if from_service == 'Taifelds' or from_service == 'Taifelds-disfruta' or from_service == 'Hidrosina' or from_service == 'Santory':
 
         if bandera == None:
             try:
