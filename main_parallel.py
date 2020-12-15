@@ -2830,7 +2830,7 @@ def hidrosina_map():
     return m._repr_html_()
 
 @app.route('/santory', methods=['POST'])
-def taifelds_service():
+def santory_service():
     global data
     global json_respuesta
     global bandera
