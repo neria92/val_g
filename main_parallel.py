@@ -2532,7 +2532,8 @@ def hidrosina_service():
                     else:
 
                         alerta_cubrebocas = df_row['¿Qué no tenía el despachador?'].to_list()[0]
-
+                        alerta_precios = df_row['¿Qué falta?'].to_list()[0]
+                        
                         if 'cubrebocas' in alerta_cubrebocas:
                             alerta_sanitaria = 'cubrebocas'
                             if zona == 'Metro':
@@ -2566,7 +2567,7 @@ def hidrosina_service():
                                     print(e,'fallo email alerta')
                                     pass
                         
-                        if df_row['La estación, ¿lucía limpia, bien iluminada y con el letrero de precios encendido?'].values == 'FALSE':
+                        if 'precios' in alerta_precios:
                             alerta_precios_apagados = 'Si'
                             if zona == 'Metro':
                                 try:
@@ -2636,7 +2637,7 @@ def hidrosina_service():
 
                             try:
                                 fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
-                                url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-qr-ilegible"
+                                url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-qr-ilegible"
 
                                 payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_qr,'service':from_service,'fecha_incidente':fecha_incidente,'url_ticket':image_path,'subject':'ALERTA DE QR ILEGIBLE'}
                                 headers = {'Content-Type': 'application/json'}
