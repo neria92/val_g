@@ -188,6 +188,7 @@ def loadmodel():
     global body_hidrosina_alerta_qr
     global body_hidrosina_alerta_precios
     global body_hidrosina_alerta_ticket
+    global body_hidrosina_alerta_gerente
     global body_hidrosina_alerta_100
     global body_hidrosina_alerta_calificacion_baja
     global body_taifelds_disfruta
@@ -202,6 +203,7 @@ def loadmodel():
     body_hidrosina_alerta = "Hay una alerta de seguridad sanitaria por falta de cubrebocas en la estación con identificador HD "
     body_hidrosina_alerta_precios = "Hay una alerta de letrero de precios apagados en la estación con identificador HD "
     body_hidrosina_alerta_ticket = "Hay una alerta de ticket incorrecto en la estación con identificador HD "
+    body_hidrosina_alerta_gerente = "Hay una alerta de auscencia de Gerente de Estación en la estación con identificador HD "
     body_hidrosina_alerta_qr = "Hay una alerta de código QR ilegible en la estación con identificador HD "
     body_hidrosina_alerta_100 = "Hay una alerta de calificación poco confiable en la estación con identificador HD "
     body_hidrosina_alerta_calificacion_baja = "Hay una alerta de baja calificación en la estación con identificador HD "
@@ -2635,7 +2637,39 @@ def hidrosina_service():
 
                                 except Exception as e:
                                     print(e,'fallo email alerta')
-                                    pass
+
+                        if df_row['¿Identificas en la estación un trabajador con bata amarilla?'].values == 'FALSE' and (39600 < hora_timestamp < 54000 or 57600 < hora_timestamp < 63000) and (str(name_hd) not in ['67','69','70','71','72','73','81','107','108']):
+                            if zona == 'Metro':
+                                try:
+                                    fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                    nombre_despachador = qr_decoded
+                                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-metro"
+
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_gerente,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE AUSENCIA DE GERENTE DE ESTACION'}
+                                    headers = {'Content-Type': 'application/json'}
+
+                                    mail_process8 = Process(target = enviar_mail, args = (url,headers,payload))
+                                    mail_process8.start()
+
+                                except Exception as e:
+                                    print(e,'fallo email alerta')
+                                    
+                            else:
+                                try:
+                                    fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                    nombre_despachador = qr_decoded
+                                    url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-provincia"
+
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_gerente,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE AUSENCIA DE GERENTE DE ESTACION'}
+                                    headers = {'Content-Type': 'application/json'}
+
+                                    mail_process8 = Process(target = enviar_mail, args = (url,headers,payload))
+                                    mail_process8.start()
+
+                                except Exception as e:
+                                    print(e,'fallo email alerta')
+
+
 
                         if 'pudo leer' in qr_decoded:
 
@@ -2667,6 +2701,10 @@ def hidrosina_service():
                         df_row_examen = df_row_examen.replace(['FALSE','TRUE'],[False,True]) * 1
                         puntajes = pd.Series([35,25,40,20,15,10,15,10,20,10])
                         calificacion = df_row_examen.values @ puntajes
+
+                        if df_row['¿Los despachadores estaban ocupados atendiendo clientes?'].values == 'TRUE':
+                            calificacion += 25
+
                         calificacion = int(calificacion / 2)
                         score = calificacion
 
