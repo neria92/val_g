@@ -173,6 +173,8 @@ def loadmodel():
     global missions_santory
     global missions_taifelds2
     global missions_hidrosina
+    global tabla_summary
+    global tabla_preguntas
     global missions_taifelds_disfruta
     global missions_covid
     global my_faces
@@ -214,6 +216,8 @@ def loadmodel():
     missions_taifelds = db.Table('taifelds', metadata, autoload=True, autoload_with=engine_misions)
     missions_taifelds2 = db.Table('taifelds2', metadata, autoload=True, autoload_with=engine_misions)
     missions_hidrosina = db.Table('hidrosina', metadata, autoload=True, autoload_with=engine_misions)
+    tabla_summary = db.Table('hidrosina_scores_estacion', metadata, autoload=True, autoload_with=engine_misions)
+    tabla_preguntas = db.Table('hidrosina_preguntas_estacion', metadata, autoload=True, autoload_with=engine_misions)
     missions_taifelds_disfruta = db.Table('taifelds_disfruta', metadata, autoload=True, autoload_with=engine_misions)
     missions_covid = db.Table('covid', metadata, autoload=True, autoload_with=engine_misions)
     missions_santory = db.Table('santory', metadata, autoload=True, autoload_with=engine_misions)
@@ -1478,6 +1482,52 @@ def url_qr_2_text(url):
 def enviar_mail(url,headers,payload):
   requests.request("POST", url, headers=headers, data = json.dumps(payload))
 
+def Categorizacion_esta(df):
+    df.loc[((df.no_luce_limpia.isnull()) & (df.no_bien_iluminada.isnull()) & (df.No_letreros_precios.isnull())),"Que_le_faltaba_aLa_estacion"]="Tiene los tres elementos"
+    df.loc[((df.no_luce_limpia.isnull()) & (df.no_bien_iluminada.isnull()) & (df.No_letreros_precios.notnull())),"Que_le_faltaba_aLa_estacion"]="No tiene precios iluminados"
+
+    df.loc[((df.no_luce_limpia.isnull()) & (df.no_bien_iluminada.notnull()) & (df.No_letreros_precios.isnull())),"Que_le_faltaba_aLa_estacion"]="No está bien iluminada"
+    df.loc[((df.no_luce_limpia.isnull()) & (df.no_bien_iluminada.notnull()) & (df.No_letreros_precios.notnull())),"Que_le_faltaba_aLa_estacion"]="No letrero de precios y no bien iluminada"
+
+    df.loc[((df.no_luce_limpia.notnull()) & (df.no_bien_iluminada.isnull()) & (df.No_letreros_precios.isnull())),"Que_le_faltaba_aLa_estacion"]="No está limpia"
+    df.loc[((df.no_luce_limpia.notnull()) & (df.no_bien_iluminada.isnull()) & (df.No_letreros_precios.notnull())),"Que_le_faltaba_aLa_estacion"]="No está limpia y no precios iluminados"
+
+    df.loc[((df.no_luce_limpia.notnull()) & (df.no_bien_iluminada.notnull()) & (df.No_letreros_precios.isnull())),"Que_le_faltaba_aLa_estacion"]="No está limpia, no bien iluminada"
+    df.loc[((df.no_luce_limpia.notnull()) & (df.no_bien_iluminada.notnull()) & (df.No_letreros_precios.notnull())),"Que_le_faltaba_aLa_estacion"]="No tiene los tres elementos"
+    return df
+
+def Categorizacion_que_no_llevan(df):
+  df.loc[((df.uniforme_limpio.isnull()) & (df.cubrebocas.isnull()) & (df.lentes_protectores.isnull())),"que_no_llevaba_despachador"]="Llevan lentes,cubrebocas y uniforme limpio"
+  df.loc[((df.uniforme_limpio.isnull()) & (df.cubrebocas.isnull()) & (df.lentes_protectores.notnull())),"que_no_llevaba_despachador"]="No_llevan: Lentes protectores"
+
+  df.loc[((df.uniforme_limpio.isnull()) & (df.cubrebocas.notnull()) & (df.lentes_protectores.isnull())),"que_no_llevaba_despachador"]="No llevan: Cubrebocas"
+  df.loc[((df.uniforme_limpio.isnull()) & (df.cubrebocas.notnull()) & (df.lentes_protectores.notnull())),"que_no_llevaba_despachador"]="No traen: Cubrebocas y lentes protectores"
+
+  df.loc[((df.uniforme_limpio.notnull()) & (df.cubrebocas.isnull()) & (df.lentes_protectores.isnull())),"que_no_llevaba_despachador"]="No tienen:  Uniforme limpio"
+  df.loc[((df.uniforme_limpio.notnull()) & (df.cubrebocas.isnull()) & (df.lentes_protectores.notnull())),"que_no_llevaba_despachador"]="No tienen: Uniforme limpio y lentes protectores"
+
+  df.loc[((df.uniforme_limpio.notnull()) & (df.cubrebocas.notnull()) & (df.lentes_protectores.isnull())),"que_no_llevaba_despachador"]="No tienen: Uniforme limpio y cubrebocas"
+  df.loc[((df.uniforme_limpio.notnull()) & (df.cubrebocas.notnull()) & (df.lentes_protectores.notnull())),"que_no_llevaba_despachador"]="No tienen: Ninguno de los tres elementos"
+  return df
+
+def Categorizacion_Cantidad_tipo_forma(df):
+  df.loc[((df.cantidad_combustible.isnull()) & (df.Tipo_combustible.isnull()) & (df.Forma_pago.isnull())),"Que_no_pregunto"]="Pregunto las tres opciones: Cantidad, tipo y forma"
+  df.loc[((df.cantidad_combustible.isnull()) & (df.Tipo_combustible.isnull()) & (df.Forma_pago.notnull())),"Que_no_pregunto"]="No preguntó Forma de pago"
+  df.loc[((df.cantidad_combustible.isnull()) & (df.Tipo_combustible.notnull()) & (df.Forma_pago.isnull())),"Que_no_pregunto"]="No preguntó Tipo de combustible"
+  df.loc[((df.cantidad_combustible.isnull()) & (df.Tipo_combustible.notnull()) & (df.Forma_pago.notnull())),"Que_no_pregunto"]="No preguntó Tipo de combustible y forma de pago"
+  df.loc[((df.cantidad_combustible.notnull()) & (df.Tipo_combustible.isnull()) & (df.Forma_pago.isnull())),"Que_no_pregunto"]="No preguntó Cantidad de combustible"
+  df.loc[((df.cantidad_combustible.notnull()) & (df.Tipo_combustible.isnull()) & (df.Forma_pago.notnull())),"Que_no_pregunto"]="No preguntó Cantidad de combustible y forma de pago"
+  df.loc[((df.cantidad_combustible.notnull()) & (df.Tipo_combustible.notnull()) & (df.Forma_pago.isnull())),"Que_no_pregunto"]="No preguntó Cantidad y tipo de combustible"
+  df.loc[((df.cantidad_combustible.notnull()) & (df.Tipo_combustible.notnull()) & (df.Forma_pago.notnull())),"Que_no_pregunto"]="No preguntó :Cantidad, tipo de combustible y forma de pago"
+  return df
+
+def Categorizacion_paarabrisa_prdo(df):
+  df.loc[((df.prod_periferico.isnull()) & (df.Limpieza_parabrisas.isnull())),"que_no_te_ofrecio"]="Ofreció las dos opciones, limpieza y productos"
+  df.loc[((df.prod_periferico.isnull()) & (df.Limpieza_parabrisas.notnull()) ),"que_no_te_ofrecio"]="No ofrecio Limpieza de parabrisas"
+  df.loc[((df.prod_periferico.notnull()) & (df.Limpieza_parabrisas.isnull())),"que_no_te_ofrecio"]="No ofrecio Producto periférico"
+  df.loc[((df.prod_periferico.notnull()) & (df.Limpieza_parabrisas.notnull())),"que_no_te_ofrecio"]="No ofrecio Limpieza de parabrisas y Producto periférico"
+  return df
+
 @app.route('/', methods=['POST'])
 def location_time_validate():
     global data
@@ -2645,7 +2695,7 @@ def hidrosina_service():
                                     nombre_despachador = qr_decoded
                                     url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-metro"
 
-                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_gerente,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE AUSENCIA DE GERENTE DE ESTACION'}
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_gerente,'service':from_service,'nombre_despachador':'No aplica','fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE AUSENCIA DE GERENTE DE ESTACION'}
                                     headers = {'Content-Type': 'application/json'}
 
                                     mail_process8 = Process(target = enviar_mail, args = (url,headers,payload))
@@ -2660,7 +2710,7 @@ def hidrosina_service():
                                     nombre_despachador = qr_decoded
                                     url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-provincia"
 
-                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_gerente,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE AUSENCIA DE GERENTE DE ESTACION'}
+                                    payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_gerente,'service':from_service,'nombre_despachador':'No aplica','fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE AUSENCIA DE GERENTE DE ESTACION'}
                                     headers = {'Content-Type': 'application/json'}
 
                                     mail_process8 = Process(target = enviar_mail, args = (url,headers,payload))
@@ -2793,6 +2843,491 @@ def hidrosina_service():
         json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'No te encuentras en una ubicación u horario disponible o esta estación ha sido completada en este periodo, si crees que esto es un error comunícate con soporte Gotchu! al teléfono 55 7161 7864'}
         return jsonify(json_respuesta)
 
+@app.route('/hidrosina-tabla-summary', methods=['POST'])
+def hidrosina_summary():
+    global from_service
+    from_service = 'hidro_summary'
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_hidrosina])).fetchall()          
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_hidrosina])).fetchall()
+        except Exception as e:
+            print(e)
+            return jsonify({'Service':False,'Step':1})
+
+    df_hidro = pd.DataFrame(results)
+    df_hidro.columns = results[0].keys()
+    gc = pygsheets.authorize(service_file='images/gchgame-ea9d60803e55.json')
+    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EZn8lzDV-51jJ7p95aVC4afRIlDlocW7nbabCBppMLU/edit?usp=sharing")
+    wks = sh.sheet1
+    df_typeform = wks.get_as_df()
+    df_typeform = df_typeform.drop_duplicates('capture_id')
+    df_joined = pd.merge(df_hidro, df_typeform, left_on='Hash_typeform', right_on='capture_id')
+    df_hidrosina = df_joined
+
+    ##Mod preprocesamiento
+    df_hidrosina = df_hidrosina.replace(['TRUE','FALSE'],[1,0])
+    df_hidrosina['No luce limpia'] = ['No luce limpia' if type(x) != float and 'limpia' in x else np.nan for x in df_hidrosina['¿Qué falta?']]
+    df_hidrosina['No esta bien iluminada'] = ['No esta bien iluminada' if type(x) != float and 'iluminada' in x else np.nan for x in df_hidrosina['¿Qué falta?']]
+    df_hidrosina['No está el letrero de precios encendido'] = ['No está el letrero de precios encendido' if type(x) != float and 'precios' in x else np.nan for x in df_hidrosina['¿Qué falta?']]
+
+    df_hidrosina['¿Algún despachador te señaló dónde cargar?'] = df_hidrosina['¿Había despachadores indicando el lugar disponible para cargar combustible?']
+    df_hidrosina['Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes?'] = df_hidrosina['Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes protectores?']
+    df_hidrosina['Encuentra a un trabajador con bata amarilla en la estación. ¿Lo localizaste?'] = df_hidrosina['¿Identificas en la estación un trabajador con bata amarilla?']
+
+    df_hidrosina['uniforme limpio'] = ['uniforme limpio' if type(x) != float and 'limpio' in x else np.nan for x in df_hidrosina['¿Qué no tenía el despachador?']]
+    df_hidrosina['cubrebocas'] = ['cubrebocas' if type(x) != float and 'cubrebocas' in x else np.nan for x in df_hidrosina['¿Qué no tenía el despachador?']]
+    df_hidrosina['lentes protectores'] = ['lentes protectores' if type(x) != float and 'lentes' in x else np.nan for x in df_hidrosina['¿Qué no tenía el despachador?']]
+
+    df_hidrosina['Cantidad de combustible'] = ['Cantidad de combustible' if type(x) != float and 'Cantidad' in x else np.nan for x in df_hidrosina['¿Qué no te preguntó el despachador?']]
+    df_hidrosina['Tipo de combustible'] = ['Tipo de combustible' if type(x) != float and 'Tipo' in x else np.nan for x in df_hidrosina['¿Qué no te preguntó el despachador?']]
+    df_hidrosina['Forma de pago'] = ['Forma de pago' if type(x) != float and 'pago' in x else np.nan for x in df_hidrosina['¿Qué no te preguntó el despachador?']]
+
+    df_hidrosina['Producto periférico'] = ['Producto periférico' if type(x) != float and 'Producto' in x else np.nan for x in df_hidrosina['¿Qué no te ofreció?']]
+    df_hidrosina['Limpieza de parabrisas'] = ['Limpieza de parabrisas' if type(x) != float and 'Limpieza' in x else np.nan for x in df_hidrosina['¿Qué no te ofreció?']]
+
+    df_hidrosina['Trato amable'] = ['Trato amable' if type(x) != float and 'Trato' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+    df_hidrosina['Limpio'] = ['Limpio' if type(x) != float and 'Limpio' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+    df_hidrosina['Excelente actitud'] = ['Excelente actitud' if type(x) != float and 'Excelente' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+    df_hidrosina['Grosero'] = ['Grosero' if type(x) != float and 'Grosero' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+    df_hidrosina['Comunicación clara'] = ['Comunicación clara' if type(x) != float and 'clara' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+    df_hidrosina['Atención rápida'] = ['Atención rápida' if type(x) != float and 'Atenc' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+    df_hidrosina['Mala comunicación'] = ['Mala comunicación' if type(x) != float and 'Mala' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+    df_hidrosina['Sucio'] = ['Sucio' if type(x) != float and 'Sucio' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+    df_hidrosina['Atención lenta'] = ['Atención lenta' if type(x) != float and 'lenta' in x else np.nan for x in df_hidrosina['¿Qué calificativos describen mejor al despachador?']]
+
+    df_hidrosina['Excelente'] = ['Excelente' if type(x) != float and 'Excelente' in x else np.nan for x in df_hidrosina['Selecciona las etiquetas que describan mejor a la estación']]
+    df_hidrosina['Cumple protocolo COVID'] = ['Cumple protocolo COVID' if type(x) != float and 'Cumple protocolo COVID' in x else np.nan for x in df_hidrosina['Selecciona las etiquetas que describan mejor a la estación']]
+    df_hidrosina['Regular'] = ['Regular' if type(x) != float and 'Regular' in x else np.nan for x in df_hidrosina['Selecciona las etiquetas que describan mejor a la estación']]
+    df_hidrosina['No cumple protocolo COVID'] = ['No cumple protocolo COVID' if type(x) != float and 'No cumple protocolo COVID' in x else np.nan for x in df_hidrosina['Selecciona las etiquetas que describan mejor a la estación']]
+    df_hidrosina['Decepcionante'] = ['Decepcionante' if type(x) != float and 'Decepcionante' in x else np.nan for x in df_hidrosina['Selecciona las etiquetas que describan mejor a la estación']]
+
+    estado=[]
+    zona=[]
+
+    for j in df_hidrosina['Address']:
+        e=j.split(re.findall(r'[0-9]+', j)[-1])[-1].strip(" ")
+        e=e.strip('(R)').strip(" ")
+        estado.append(e)
+
+    df_hidrosina['estado']=estado
+    df_hidrosina['zona']=np.where(df_hidrosina['Zona']=='Metro','Megalópolis','Provincia')
+    zonas=df_hidrosina[['Name','estado','zona']].drop_duplicates()
+
+    ##Estación
+    df_hidrosina['uniforme limpio'] = np.where(df_hidrosina['uniforme limpio'].isnull(),1,0)
+    df_hidrosina['cubrebocas'] = np.where(df_hidrosina['cubrebocas'].isnull(),1,0)
+    df_hidrosina['lentes protectores'] = np.where(df_hidrosina['lentes protectores'].isnull(),1,0)
+
+    df_hidrosina['score_limpia'] = df_hidrosina['La estación, ¿lucía limpia, bien iluminada y con el letrero de precios encendido?'].apply(lambda x: 35 if x == 1 else 0)
+    df_hidrosina['score_bandereando'] = df_hidrosina['¿Algún despachador te señaló dónde cargar?'].apply(lambda x: 25 if x == 1 else 0)
+
+    df_hidrosina.loc[(df_hidrosina.score_bandereando == 0) & 
+                    (df_hidrosina['¿Los despachadores estaban ocupados atendiendo clientes?'] == 1), 'score_bandereando'] = 25
+
+    df_hidrosina['score_uniforme'] = (df_hidrosina['uniforme limpio'] + df_hidrosina['cubrebocas'] + df_hidrosina['lentes protectores']) * 40 / 3
+    # df_hidrosina['score_uniforme'] = df_hidrosina['Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes protectores?'].apply(lambda x: 40 if x == 1 else 0)
+
+    #Despachador y Servicio
+
+    df_hidrosina['score_bienvenida'] = df_hidrosina['El despachador ¿dio la bienvenida?'].apply(lambda x: 20 if x == 1 else 0)
+    df_hidrosina['score_cantidad'] = df_hidrosina['¿Preguntó la cantidad, tipo de combustible a cargar y forma de pago?'].apply(lambda x: 15 if x == 1 else 0)
+    df_hidrosina['score_ceros'] = df_hidrosina['¿Mostró que la bomba estuviera en ceros antes de iniciar la carga?'].apply(lambda x: 10 if x == 1 else 0)
+    df_hidrosina['score_pextra'] = df_hidrosina['¿Ofreció algún producto periférico y limpieza de parabrisas?'].apply(lambda x: 15 if x == 1 else 0)
+    df_hidrosina['score_ticket'] = df_hidrosina['¿Entregó el ticket correcto?'].apply(lambda x: 10 if x == 1 else 0)
+    df_hidrosina['score_gafete'] = df_hidrosina['¿Tenía puesto el gafete en un lugar visible?'].apply(lambda x: 10 if x == 1 else 0)
+    df_hidrosina['score_amable'] = df_hidrosina['¿Fue amable y cordial al atenderle?'].apply(lambda x: 20 if x == 1 else 0)
+
+    df_hidrosina['score_estacion']=df_hidrosina['score_limpia']+df_hidrosina['score_bandereando']+df_hidrosina['score_uniforme']
+    df_hidrosina['score_servicio']=df_hidrosina['score_bienvenida']+df_hidrosina['score_cantidad']+df_hidrosina['score_ceros']+df_hidrosina['score_pextra']+df_hidrosina['score_ticket']+df_hidrosina['score_gafete']+df_hidrosina['score_amable']
+    df_hidrosina['score_total']=df_hidrosina['score_estacion']+df_hidrosina['score_servicio']
+
+    df_hidrosina_score=df_hidrosina.groupby(['Name','Latitude','Longitude'])['score_estacion','score_servicio','score_total'].mean().reset_index()
+    df_hidrosina_count=df_hidrosina.groupby(['Name','Latitude','Longitude'])['Id'].count().reset_index()
+    df_hidrosina_dist=df_hidrosina.groupby(['Name','Latitude','Longitude'])[ 'Excelente',
+                                                            'Cumple protocolo COVID',
+                                                            'Regular',
+                                                            'No cumple protocolo COVID',
+                                                            'Decepcionante',
+                                                            'Trato amable',
+                                                            'Limpio',
+                                                            'Excelente actitud',
+                                                            'Grosero',
+                                                            'Comunicación clara',
+                                                            'Atención rápida',
+                                                            'Mala comunicación',
+                                                            'Sucio',
+                                                            'Atención lenta'].count().reset_index()
+
+    df_hidrosina_likee=pd.crosstab(df_hidrosina['Name'], df_hidrosina['¿Like a la estación?']).reset_index()
+    df_hidrosina_likee=df_hidrosina_likee.rename(columns={0: "no_like_estacion", 1: "like_estacion"})
+    df_hidrosina_liked=pd.crosstab(df_hidrosina['Name'], df_hidrosina['¿Like al despachador por su servicio?']).reset_index()
+    df_hidrosina_liked=df_hidrosina_liked.rename(columns={0: "no_like_servicio", 1: "like_servicio"})
+    df_hidrosina_tiempo=pd.crosstab(df_hidrosina['Name'], df_hidrosina['¿Cuánto tiempo estuviste formado para recibir el servicio?']).reset_index()
+    try: dummie = df_hidrosina_tiempo['Más de 10 minutos']
+    except: df_hidrosina_tiempo['Más de 10 minutos'] = 0
+
+    df_hidrosina_summary=pd.merge(df_hidrosina_score,df_hidrosina_count,on=["Name",'Latitude','Longitude'],how="left")
+    df_hidrosina_summary=pd.merge(df_hidrosina_summary,df_hidrosina_dist,on=["Name",'Latitude','Longitude'],how="left")
+    df_hidrosina_summary=pd.merge(df_hidrosina_summary,df_hidrosina_likee,on=["Name"],how="left")
+    df_hidrosina_summary=pd.merge(df_hidrosina_summary,df_hidrosina_liked,on=["Name"],how="left")
+    df_hidrosina_summary=pd.merge(df_hidrosina_summary,df_hidrosina_tiempo,on=["Name"],how="left")
+    df_hidrosina_summary=df_hidrosina_summary.rename(columns={'Id': "total_encuestas"})
+    df_hidrosina_summary=pd.merge(df_hidrosina_summary,zonas,on=["Name"],how="left")
+    df_hidrosina_summary.sort_values(['zona','estado','score_total'],inplace=True)
+
+    try:
+        with engine_misions.connect() as connection:
+            connection.execute(tabla_summary.delete().where(tabla_summary.c.Month == datetime.now().month))
+    except:
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(tabla_summary.delete().where(tabla_summary.c.Month == datetime.now().month))
+        except:
+            return jsonify({'Service':False,'Step':2})
+
+    for row in df_hidrosina_summary.itertuples():
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(tabla_summary.insert().values(Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Month = datetime.now().month,
+                                                                Nombre_Estacion = row.Name, Id_Estacion = row.Name,
+                                                                Latitud = row.Latitude, Longitud = row.Longitude,
+                                                                Score_Estacion = row.score_estacion, Score_Servicio = row.score_servicio, Score_Total = row.score_total, Total_Encuentas = row.total_encuestas,
+                                                                Excelente = row.Excelente, Cumple_protocolo_COVID = row._9, Regular = row.Regular,
+                                                                No_cumple_protocolo_COVID = row._11, Decepcionante = row.Decepcionante, Trato_amable = row._13, Limpio = row.Limpio,
+                                                                Excelente_actitud = row._15, Grosero = row.Grosero, Comunicacion_clara = row._17, Atencion_rapida = row._18,
+                                                                Mala_comunicacion = row._19, Sucio = row.Sucio, Atencion_lenta = row._21, No_Like_Estacion = row.no_like_estacion,
+                                                                Like_Estacion = row.like_estacion, No_Like_Servicio = row.no_like_estacion, Like_Servicio = row.like_servicio,
+                                                                Espera_1_a_5_minutos = row._26, Espera_6_a_10_minutos = row._27,
+                                                                Espera_mas_de_10_minutos = row._28, Estado = row.estado, Zona = row.zona))
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    connection.execute(tabla_summary.insert().values(Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Nombre_Estacion = row.Name, Id_Estacion = row.Name,
+                                                                    Latitud = row.Latitude, Longitud = row.Longitude,
+                                                                    Score_Estacion = row.score_estacion, Score_Servicio = row.score_servicio, Score_Total = row.score_total, Total_Encuentas = row.total_encuestas,
+                                                                    Excelente = row.Excelente, Cumple_protocolo_COVID = row._9, Regular = row.Regular,
+                                                                    No_cumple_protocolo_COVID = row._11, Decepcionante = row.Decepcionante, Trato_amable = row._13, Limpio = row.Limpio,
+                                                                    Excelente_actitud = row._15, Grosero = row.Grosero, Comunicacion_clara = row._17, Atencion_rapida = row._18,
+                                                                    Mala_comunicacion = row._19, Sucio = row.Sucio, Atencion_lenta = row._21, No_Like_Estacion = row.no_like_estacion,
+                                                                    Like_Estacion = row.like_estacion, No_Like_Servicio = row.no_like_estacion, Like_Servicio = row.like_servicio,
+                                                                    Espera_1_a_5_minutos = row._26, Espera_6_a_10_minutos = row._27,
+                                                                    Espera_mas_de_10_minutos = row._28, Estado = row.estado, Zona = row.zona))
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False,'Step':3})
+    
+    return jsonify({'Service':True,'Step':4})
+
+@app.route('/hidrosina-tabla-totales', methods=['POST'])
+def hidrosina_totales():
+    global from_service
+    from_service = 'hidro_totatales'
+
+    try:
+        with engine_misions.connect() as connection:
+            results = connection.execute(db.select([missions_hidrosina])).fetchall()          
+    except Exception as e:
+        print(e)
+        try:
+            with engine_misions.connect() as connection:
+                results = connection.execute(db.select([missions_hidrosina])).fetchall()
+        except Exception as e:
+            print(e)
+            return jsonify({'Service':False,'Step':1})
+    
+    df_hidro = pd.DataFrame(results)
+    df_hidro.columns = results[0].keys()
+
+    gc = pygsheets.authorize(service_file='images/gchgame-ea9d60803e55.json')
+    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EZn8lzDV-51jJ7p95aVC4afRIlDlocW7nbabCBppMLU/edit?usp=sharing")
+    wks = sh.sheet1
+    df_typeform = wks.get_as_df()
+    df_typeform = df_typeform.drop_duplicates('capture_id')
+    df_joined = pd.merge(df_hidro, df_typeform, left_on='Hash_typeform', right_on='capture_id')
+    df = df_joined
+
+    ##Mod preprocesamiento
+    df = df.replace(['TRUE','FALSE'],[1,0])
+    df['No luce limpia'] = ['No luce limpia' if type(x) != float and 'limpia' in x else np.nan for x in df['¿Qué falta?']]
+    df['No esta bien iluminada'] = ['No esta bien iluminada' if type(x) != float and 'iluminada' in x else np.nan for x in df['¿Qué falta?']]
+    df['No está el letrero de precios encendido'] = ['No está el letrero de precios encendido' if type(x) != float and 'precios' in x else np.nan for x in df['¿Qué falta?']]
+
+    df['¿Algún despachador te señaló dónde cargar?'] = df['¿Había despachadores indicando el lugar disponible para cargar combustible?']
+    df['Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes?'] = df['Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes protectores?']
+    df['Encuentra a un trabajador con bata amarilla en la estación. ¿Lo localizaste?'] = df['¿Identificas en la estación un trabajador con bata amarilla?']
+
+    df['uniforme limpio'] = ['uniforme limpio' if type(x) != float and 'limpio' in x else np.nan for x in df['¿Qué no tenía el despachador?']]
+    df['cubrebocas'] = ['cubrebocas' if type(x) != float and 'cubrebocas' in x else np.nan for x in df['¿Qué no tenía el despachador?']]
+    df['lentes protectores'] = ['lentes protectores' if type(x) != float and 'lentes' in x else np.nan for x in df['¿Qué no tenía el despachador?']]
+
+    df['Cantidad de combustible'] = ['Cantidad de combustible' if type(x) != float and 'Cantidad' in x else np.nan for x in df['¿Qué no te preguntó el despachador?']]
+    df['Tipo de combustible'] = ['Tipo de combustible' if type(x) != float and 'Tipo' in x else np.nan for x in df['¿Qué no te preguntó el despachador?']]
+    df['Forma de pago'] = ['Forma de pago' if type(x) != float and 'pago' in x else np.nan for x in df['¿Qué no te preguntó el despachador?']]
+
+    df['Producto periférico'] = ['Producto periférico' if type(x) != float and 'Producto' in x else np.nan for x in df['¿Qué no te ofreció?']]
+    df['Limpieza de parabrisas'] = ['Limpieza de parabrisas' if type(x) != float and 'Limpieza' in x else np.nan for x in df['¿Qué no te ofreció?']]
+
+
+    df['conteo']=1
+
+    estado=[]
+    zona=[]
+
+    for j in df['Address']:
+        e=j.split(re.findall(r'[0-9]+', j)[-1])[-1].strip(" ")
+        e=e.strip('(R)').strip(" ")
+        estado.append(e)
+    
+    df['estado']=estado
+    df['zona']=np.where(df['Zona']=='Metro','Megalópolis','Provincia')
+
+    #Pregunta 1
+    conteos_estado_estacion=pd.crosstab(df['Name'],df['La estación, ¿lucía limpia, bien iluminada y con el letrero de precios encendido?']).reset_index().rename(columns={1: "SiFreq_Estacion_clean_luz_PreciosEncendidos",0: "NoFreq_Estacion_clean_luz_PreciosEncendidos"})
+
+    dk = df.rename(columns = {'No luce limpia':'no_luce_limpia','No esta bien iluminada': 'no_bien_iluminada',
+                                'No está el letrero de precios encendido':'No_letreros_precios',
+                                'La estación, ¿lucía limpia, bien iluminada y con el letrero de precios encendido?':'pregunta'})
+
+    Ns=Categorizacion_esta(dk)
+            
+    queLe_falta_a_estacion=pd.crosstab(Ns['Name'], Ns['Que_le_faltaba_aLa_estacion']).reset_index()
+
+    #PRegunta 2
+    Despachadores_banderando=pd.crosstab(df['Name'],df['¿Algún despachador te señaló dónde cargar?']).reset_index().rename(columns={1: "SiFreq_Desp_bandereando",0: "NoFreq_Desp_bandereando"})
+
+    #Pregunta 3
+    protocolo_despachador=pd.crosstab(df['Name'],df['Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes?']).reset_index().rename(columns={1: "SiFreq_Protocolo_desp",0: "NoFreq_Protocolo_desp"})
+
+    d2k = df.rename(columns = {'uniforme limpio': 'uniforme_limpio','lentes protectores': 'lentes_protectores',
+                          ' 	Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes protectores?':'pregunta'})
+
+    Ns=Categorizacion_que_no_llevan(d2k)
+
+    que_no_lleva_despachador=pd.crosstab(Ns['Name'], Ns['que_no_llevaba_despachador']).reset_index()
+
+    #Pregunta 4
+    trabajador_bata=pd.crosstab(df['Name'],df['Encuentra a un trabajador con bata amarilla en la estación. ¿Lo localizaste?']).reset_index().rename(columns={1: "SiFreq_trabajador_bata",0: "NoFreq_trabajador_bata"})
+
+    ####    PREGUNTAS RELACIONADAS CON EL SERVICIO 
+
+    #Pregunta 1:
+    da_bienvenida_el_despachador=pd.crosstab(df['Name'],df['El despachador ¿dio la bienvenida?']).reset_index().rename(columns={1: "Si_el_desp_da_bienvenida",0: "No_el_desp_da_bienvenida"})
+
+    #Pregunta 2:
+
+    pregunto_combustible_cantidad=pd.crosstab(df['Name'],df['¿Preguntó la cantidad, tipo de combustible a cargar y forma de pago?']).reset_index().rename(columns={1: "Si_Forma_pago_com_pago",0: "No_Forma_pago_com_pago"})
+    pregunto_combustible_cantidad_p=pd.crosstab(df['Name'],df['¿Preguntó la cantidad, tipo de combustible a cargar y forma de pago?'],normalize='index').reset_index().rename(columns={1: "Si_Forma_pago_com_pago",0: "No_Forma_pago_com_pago"})
+
+    d2kk = df.rename(columns = {'Cantidad de combustible': 'cantidad_combustible','Tipo de combustible': 'Tipo_combustible',
+                                'Forma de pago': 'Forma_pago','¿Preguntó la cantidad, tipo de combustible a cargar y forma de pago?':'pregunta'})
+
+    Ns=Categorizacion_Cantidad_tipo_forma(d2kk)
+    Quefalta_que_pregunta=pd.crosstab(Ns['Name'], Ns['Que_no_pregunto']).reset_index()    
+
+    #Pregunta 3
+    mostro_bomba_en_cero=pd.crosstab(df['Name'], df['¿Mostró que la bomba estuviera en ceros antes de iniciar la carga?']).reset_index().rename(columns={1: "Si_Mostro_bomba_cero",0: "No_Mostro_bomba_cero"})
+
+
+    #Pregunta 4
+    ofrecio_productos_extras=pd.crosstab(df['Name'], df['¿Ofreció algún producto periférico y limpieza de parabrisas?']).reset_index().rename(columns={1: "Si_Ofrece_Prd_Extras",0: "No_Ofrece_Prd_Extras"})
+    ofrecio_productos_extras_p=pd.crosstab(df['Name'], df['¿Ofreció algún producto periférico y limpieza de parabrisas?'],normalize='index').reset_index().rename(columns={1: "Si_Ofrece_Prd_Extras",0: "No_Ofrece_Prd_Extras"})
+
+    d4 = df.rename(columns = {'Producto periférico': 'prod_periferico','Limpieza de parabrisas': 'Limpieza_parabrisas', 
+                                '¿Ofreció algún producto periférico y limpieza de parabrisas?': 'pregunta'})
+
+    Rres=Categorizacion_paarabrisa_prdo(d4)
+    Que_no_ofrecio=pd.crosstab(Rres['Name'], Rres['que_no_te_ofrecio']).reset_index()
+
+    #Pregunta 5
+    ticket_correcto=pd.crosstab(df['Name'], df['¿Entregó el ticket correcto?']).reset_index().rename(columns={1: "Si_ticket_correcto",0: "No_ticket_correcto"})
+
+    #Pregunta 6
+    gafete_visble=pd.crosstab(df['Name'], df['¿Tenía puesto el gafete en un lugar visible?']).reset_index().rename(columns={1: "Si_Gafete_visible",0: "No_Gafete_visible"})
+
+    #Pregunta 7
+    amableYCordial=pd.crosstab(df['Name'], df['¿Fue amable y cordial al atenderle?']).reset_index().rename(columns={1: "Si_amableYCordial",0: "No_amableYCordial"})
+
+    #Pregunta 8
+    Tieempo_De_Espera=pd.crosstab(df['Name'], df['¿Cuánto tiempo estuviste formado para recibir el servicio?']).reset_index()
+
+    cols=['SiFreq_Estacion_clean_luz_PreciosEncendidos',
+            'NoFreq_Estacion_clean_luz_PreciosEncendidos',
+            'Tiene los tres elementos',
+            'No tiene precios iluminados',
+            'No está bien iluminada',
+            'No letrero de precios y no bien iluminada',
+            'No está limpia',
+            'No está limpia y no precios iluminados',
+            'No está limpia, no bien iluminada',
+            'No tiene los tres elementos',
+            'SiFreq_Desp_bandereando',
+            'NoFreq_Desp_bandereando',
+            'SiFreq_Protocolo_desp',
+            'NoFreq_Protocolo_desp',
+            'Llevan lentes,cubrebocas y uniforme limpio',
+            'No_llevan: Lentes protectores',
+            'No llevan: Cubrebocas',
+            'No traen: Cubrebocas y lentes protectores',
+            'No tienen:  Uniforme limpio',
+            'No tienen: Uniforme limpio y lentes protectores',
+            'No tienen: Uniforme limpio y cubrebocas',
+            'No tienen: Ninguno de los tres elementos',
+            'SiFreq_trabajador_bata',
+            'NoFreq_trabajador_bata',
+            'Si_el_desp_da_bienvenida',
+            'No_el_desp_da_bienvenida',
+            'Si_Forma_pago_com_pago',
+            'No_Forma_pago_com_pago',
+            'Pregunto las tres opciones: Cantidad, tipo y forma',
+            'No preguntó Forma de pago',
+            'No preguntó Tipo de combustible',
+            'No preguntó Tipo de combustible y forma de pago',
+            'No preguntó Cantidad de combustible',
+            'No preguntó Cantidad de combustible y forma de pago',
+            'No preguntó Cantidad y tipo de combustible',
+            'No preguntó :Cantidad, tipo de combustible y forma de pago',
+            'Si_Mostro_bomba_cero',
+            'No_Mostro_bomba_cero',
+            'Si_Ofrece_Prd_Extras',
+            'No_Ofrece_Prd_Extras',
+            'Ofreció las dos opciones, limpieza y productos',
+            'No ofrecio Limpieza de parabrisas',
+            'No ofrecio Producto periférico',
+            'No ofrecio Limpieza de parabrisas y Producto periférico',
+            'Si_ticket_correcto',
+            'No_ticket_correcto',
+            'Si_Gafete_visible',
+            'No_Gafete_visible',
+            'Si_amableYCordial',
+            'No_amableYCordial',
+            '1 a 5 minutos',
+            '6 a 10 minutos',
+            'Más de 10 minutos',
+            3.0
+            ]
+    
+    #Tabla numeros
+    aux=pd.DataFrame(columns = ['Name','estado','zona']+cols) 
+    aux['Name'] = df['Name']
+    aux['estado'] = df['estado']
+    aux['zona'] = df['zona']
+    aux.drop_duplicates(subset=['Name','estado','zona'],inplace=True)
+
+    aux=conteos_estado_estacion.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=queLe_falta_a_estacion.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=Despachadores_banderando.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=protocolo_despachador.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=trabajador_bata.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=que_no_lleva_despachador.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=da_bienvenida_el_despachador.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=pregunto_combustible_cantidad.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=Quefalta_que_pregunta.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=mostro_bomba_en_cero.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=ofrecio_productos_extras.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=Que_no_ofrecio.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=ticket_correcto.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=gafete_visble.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=amableYCordial.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+    aux=Tieempo_De_Espera.set_index('Name').combine_first(aux.set_index('Name')).reset_index()
+
+
+    aux.sort_values(['zona','estado'],inplace=True)
+    totales = aux[['Name','estado','zona']+cols]
+    totales = totales.fillna(0)
+
+    try:
+        with engine_misions.connect() as connection:
+            connection.execute(tabla_preguntas.delete().where(tabla_preguntas.c.Month == datetime.now().month))
+    except:
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(tabla_preguntas.delete().where(tabla_preguntas.c.Month == datetime.now().month))
+        except:
+            return jsonify({'Service':False,'Step':2})
+
+    for row in totales.itertuples():
+        try:
+            with engine_misions.connect() as connection:
+                connection.execute(tabla_preguntas.insert().values(Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Month = datetime.now().month,
+                                                                    Name = row.Name, estado = row.estado, zona = row.zona, SiFreq_Estacion_clean_luz_PreciosEncendidos = row.SiFreq_Estacion_clean_luz_PreciosEncendidos,
+                                                                    NoFreq_Estacion_clean_luz_PreciosEncendidos = row.NoFreq_Estacion_clean_luz_PreciosEncendidos,
+                                                                    Tiene_los_tres_elementos = row._6, No_tiene_precios_iluminados = row._7,
+                                                                    No_esta_bien_iluminada = row._8, No_letrero_de_precios_y_no_bien_iluminada = row._9,
+                                                                    No_esta_limpia = row._10, No_esta_limpia_y_no_precios_iluminados = row._11,
+                                                                    No_esta_limpia_no_bien_iluminada = row._12, No_tiene_los_tres_elementos = row._13,
+                                                                    SiFreq_Desp_bandereando = row.SiFreq_Desp_bandereando, NoFreq_Desp_bandereando = row.NoFreq_Desp_bandereando,
+                                                                    SiFreq_Protocolo_desp = row.SiFreq_Protocolo_desp, NoFreq_Protocolo_desp = row.NoFreq_Protocolo_desp,
+                                                                    Llevan_lentes_cubrebocas_y_uniforme_limpio = row._18,
+                                                                    No_llevan_Lentes_protectores = row._19, No_llevan_Cubrebocas = row._20,
+                                                                    No_traen_Cubrebocas_y_lentes_protectores = row._21, No_tienen_Uniforme_limpio = row._22,
+                                                                    No_tienen_Uniforme_limpio_y_lentes_protectores = row._23,
+                                                                    No_tienen_Uniforme_limpio_y_cubrebocas = row._24,
+                                                                    No_tienen_Ninguno_de_los_tres_elementos = row._25, SiFreq_trabajador_bata = row.SiFreq_trabajador_bata,
+                                                                    NoFreq_trabajador_bata = row.NoFreq_trabajador_bata, Si_el_desp_da_bienvenida = row.Si_el_desp_da_bienvenida,
+                                                                    No_el_desp_da_bienvenida = row.No_el_desp_da_bienvenida, Si_Forma_pago_com_pago = row.Si_Forma_pago_com_pago,
+                                                                    No_Forma_pago_com_pago = row.No_Forma_pago_com_pago,
+                                                                    Pregunto_las_tres_opciones_Cantidad_tipo_y_forma = row._32,
+                                                                    No_pregunto_Forma_de_pago = row._33, No_pregunto_Tipo_de_combustible = row._34,
+                                                                    No_pregunto_Tipo_de_combustible_y_forma_de_pago = row._35,
+                                                                    No_pregunto_Cantidad_de_combustible = row._36,
+                                                                    No_pregunto_Cantidad_de_combustible_y_forma_de_pago = row._37,
+                                                                    No_pregunto_Cantidad_y_tipo_de_combustible = row._38,
+                                                                    No_pregunto_Cantidad_tipo_de_combustible_y_forma_de_pago = row._39,
+                                                                    Si_Mostro_bomba_cero = row.Si_Mostro_bomba_cero, No_Mostro_bomba_cero = row.No_Mostro_bomba_cero, Si_Ofrece_Prd_Extras = row.Si_Ofrece_Prd_Extras,
+                                                                    No_Ofrece_Prd_Extras = row.No_Ofrece_Prd_Extras, Ofrecio_las_dos_opciones_limpieza_y_productos = row._44,
+                                                                    No_ofrecio_Limpieza_de_parabrisas = row._45, No_ofrecio_Producto_periferico = row._46,
+                                                                    No_ofrecio_Limpieza_de_parabrisas_y_Producto_periferico = row._47,
+                                                                    Si_ticket_correcto = row.Si_ticket_correcto, No_ticket_correcto = row.No_ticket_correcto, Si_Gafete_visible = row.Si_Gafete_visible,
+                                                                    No_Gafete_visible = row.No_Gafete_visible, Si_amableYCordial = row.Si_amableYCordial, No_amableYCordial = row.No_amableYCordial,
+                                                                    espera_1_a_5_minutos = row._54, espera_6_a_10_minutos = row._55, Mas_de_10_minutos = row._56))
+        except Exception as e:
+            print(e)
+            try:
+                with engine_misions.connect() as connection:
+                    connection.execute(tabla_preguntas.insert().values(Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Month = datetime.now().month,
+                                                                        Name = row.Name, estado = row.estado, zona = row.zona, SiFreq_Estacion_clean_luz_PreciosEncendidos = row.SiFreq_Estacion_clean_luz_PreciosEncendidos,
+                                                                        NoFreq_Estacion_clean_luz_PreciosEncendidos = row.NoFreq_Estacion_clean_luz_PreciosEncendidos,
+                                                                        Tiene_los_tres_elementos = row._6, No_tiene_precios_iluminados = row._7,
+                                                                        No_esta_bien_iluminada = row._8, No_letrero_de_precios_y_no_bien_iluminada = row._9,
+                                                                        No_esta_limpia = row._10, No_esta_limpia_y_no_precios_iluminados = row._11,
+                                                                        No_esta_limpia_no_bien_iluminada = row._12, No_tiene_los_tres_elementos = row._13,
+                                                                        SiFreq_Desp_bandereando = row.SiFreq_Desp_bandereando, NoFreq_Desp_bandereando = row.NoFreq_Desp_bandereando,
+                                                                        SiFreq_Protocolo_desp = row.SiFreq_Protocolo_desp, NoFreq_Protocolo_desp = row.NoFreq_Protocolo_desp,
+                                                                        Llevan_lentes_cubrebocas_y_uniforme_limpio = row._18,
+                                                                        No_llevan_Lentes_protectores = row._19, No_llevan_Cubrebocas = row._20,
+                                                                        No_traen_Cubrebocas_y_lentes_protectores = row._21, No_tienen_Uniforme_limpio = row._22,
+                                                                        No_tienen_Uniforme_limpio_y_lentes_protectores = row._23,
+                                                                        No_tienen_Uniforme_limpio_y_cubrebocas = row._24,
+                                                                        No_tienen_Ninguno_de_los_tres_elementos = row._25, SiFreq_trabajador_bata = row.SiFreq_trabajador_bata,
+                                                                        NoFreq_trabajador_bata = row.NoFreq_trabajador_bata, Si_el_desp_da_bienvenida = row.Si_el_desp_da_bienvenida,
+                                                                        No_el_desp_da_bienvenida = row.No_el_desp_da_bienvenida, Si_Forma_pago_com_pago = row.Si_Forma_pago_com_pago,
+                                                                        No_Forma_pago_com_pago = row.No_Forma_pago_com_pago,
+                                                                        Pregunto_las_tres_opciones_Cantidad_tipo_y_forma = row._32,
+                                                                        No_pregunto_Forma_de_pago = row._33, No_pregunto_Tipo_de_combustible = row._34,
+                                                                        No_pregunto_Tipo_de_combustible_y_forma_de_pago = row._35,
+                                                                        No_pregunto_Cantidad_de_combustible = row._36,
+                                                                        No_pregunto_Cantidad_de_combustible_y_forma_de_pago = row._37,
+                                                                        No_pregunto_Cantidad_y_tipo_de_combustible = row._38,
+                                                                        No_pregunto_Cantidad_tipo_de_combustible_y_forma_de_pago = row._39,
+                                                                        Si_Mostro_bomba_cero = row.Si_Mostro_bomba_cero, No_Mostro_bomba_cero = row.No_Mostro_bomba_cero, Si_Ofrece_Prd_Extras = row.Si_Ofrece_Prd_Extras,
+                                                                        No_Ofrece_Prd_Extras = row.No_Ofrece_Prd_Extras, Ofrecio_las_dos_opciones_limpieza_y_productos = row._44,
+                                                                        No_ofrecio_Limpieza_de_parabrisas = row._45, No_ofrecio_Producto_periferico = row._46,
+                                                                        No_ofrecio_Limpieza_de_parabrisas_y_Producto_periferico = row._47,
+                                                                        Si_ticket_correcto = row.Si_ticket_correcto, No_ticket_correcto = row.No_ticket_correcto, Si_Gafete_visible = row.Si_Gafete_visible,
+                                                                        No_Gafete_visible = row.No_Gafete_visible, Si_amableYCordial = row.Si_amableYCordial, No_amableYCordial = row.No_amableYCordial,
+                                                                        espera_1_a_5_minutos = row._54, espera_6_a_10_minutos = row._55, Mas_de_10_minutos = row._56))
+            except Exception as e:
+                print(e)
+                return jsonify({'Service':False,'Step':3})
+
+    return jsonify({'Service':True,'Step':4})
+
 @app.route('/hidrosina-map', methods=['GET'])
 def hidrosina_map():
     global from_service
@@ -2844,7 +3379,7 @@ def hidrosina_map():
             if popup_list != []:
                 if len(popup_list) == 2:
                     popup = '<strong>Matutino y Vespertino</strong>'
-                elif popup_list == [0]:
+                elif popup_list == [21600]:
                     popup = '<strong>Matutino</strong>'
                 else:
                     popup = '<strong>Vespertino</strong>'
@@ -2989,7 +3524,6 @@ def santory_service():
         mission_message = message_pay_service(json_respuesta)
         json_respuesta['msg'] = mission_message
         return jsonify(json_respuesta)
-
 
 @app.route('/taifelds-disfruta', methods=['POST'])
 def taifelds_disfruta_service():
