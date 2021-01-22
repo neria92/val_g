@@ -2601,7 +2601,7 @@ def hidrosina_service():
                 try:
 
                     gc = pygsheets.authorize(service_file='images/gchgame-ea9d60803e55.json')
-                    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EZn8lzDV-51jJ7p95aVC4afRIlDlocW7nbabCBppMLU/edit?usp=sharing")
+                    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EGnt8H7Bwxs_EUCB4hiavwcnkHdMlj0Y4Wr0aD6Wqz0/edit?usp=sharing")
                     wks = sh.sheet1
                     df_typeform = wks.get_as_df()
 
@@ -3010,7 +3010,7 @@ def hidrosina_summary():
     df_hidro = pd.DataFrame(results)
     df_hidro.columns = results[0].keys()
     gc = pygsheets.authorize(service_file='images/gchgame-ea9d60803e55.json')
-    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EZn8lzDV-51jJ7p95aVC4afRIlDlocW7nbabCBppMLU/edit?usp=sharing")
+    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EGnt8H7Bwxs_EUCB4hiavwcnkHdMlj0Y4Wr0aD6Wqz0/edit?usp=sharing")
     wks = sh.sheet1
     df_typeform = wks.get_as_df()
     df_typeform = df_typeform.drop_duplicates('capture_id')
@@ -3193,7 +3193,7 @@ def hidrosina_totales():
     df_hidro.columns = results[0].keys()
 
     gc = pygsheets.authorize(service_file='images/gchgame-ea9d60803e55.json')
-    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EZn8lzDV-51jJ7p95aVC4afRIlDlocW7nbabCBppMLU/edit?usp=sharing")
+    sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EGnt8H7Bwxs_EUCB4hiavwcnkHdMlj0Y4Wr0aD6Wqz0/edit?usp=sharing")
     wks = sh.sheet1
     df_typeform = wks.get_as_df()
     df_typeform = df_typeform.drop_duplicates('capture_id')
