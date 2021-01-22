@@ -6,8 +6,8 @@ runtime_config:
 service: gotchu-ai
 env_variables:
   CLOUD_SQL_CONNECTION_NAME: gchgame:us-central1:gotchu
-  DB_USER: neriasql
-  DB_PASS: Neria123
+  DB_USER: appengine
+  DB_PASS: appengine1234?
   DB_NAME: responses
   DB_NAME_MISIONS: misiones
   PASS: Gotchu1234?

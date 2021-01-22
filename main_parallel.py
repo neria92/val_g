@@ -173,6 +173,8 @@ def loadmodel():
     global missions_santory
     global missions_taifelds2
     global missions_hidrosina
+    global missions_hidrosina_auditoria_strikes
+    global missions_hidrosina_servicio_strikes
     global tabla_summary
     global tabla_preguntas
     global missions_taifelds_disfruta
@@ -187,6 +189,8 @@ def loadmodel():
     global body_hidrosina
     global body_rechazada
     global body_hidrosina_alerta
+    global body_hidrosina_alerta_auditoria_baja
+    global body_hidrosina_alerta_servicio_bajo
     global body_hidrosina_alerta_qr
     global body_hidrosina_alerta_precios
     global body_hidrosina_alerta_ticket
@@ -203,6 +207,8 @@ def loadmodel():
     body_covid = "Hay una nueva misión de Hospital Covid para validar en https://gchgame.web.app/ con número de Id de Hospital: "
     body_hidrosina = "Hay una nueva misión de Hidrosina para validar en https://gchgame.web.app/ con número de Id: "
     body_hidrosina_alerta = "Hay una alerta de seguridad sanitaria por falta de cubrebocas en la estación con identificador HD "
+    body_hidrosina_alerta_auditoria_baja = "Hay una alerta de repetidas calificaciones BAJAS de auditoria en la estación con identificador HD "
+    body_hidrosina_alerta_servicio_bajo = "Hay una alerta de repetidas calificaciones BAJAS de servicio en la estación con identificador HD "
     body_hidrosina_alerta_precios = "Hay una alerta de letrero de precios apagados en la estación con identificador HD "
     body_hidrosina_alerta_ticket = "Hay una alerta de ticket incorrecto en la estación con identificador HD "
     body_hidrosina_alerta_gerente = "Hay una alerta de auscencia de Gerente de Estación en la estación con identificador HD "
@@ -216,6 +222,8 @@ def loadmodel():
     missions_taifelds = db.Table('taifelds', metadata, autoload=True, autoload_with=engine_misions)
     missions_taifelds2 = db.Table('taifelds2', metadata, autoload=True, autoload_with=engine_misions)
     missions_hidrosina = db.Table('hidrosina', metadata, autoload=True, autoload_with=engine_misions)
+    missions_hidrosina_auditoria_strikes = db.Table('hidrosina_auditoria_strikes', metadata, autoload=True, autoload_with=engine_misions)
+    missions_hidrosina_servicio_strikes = db.Table('hidrosina_servicio_strikes', metadata, autoload=True, autoload_with=engine_misions)
     tabla_summary = db.Table('hidrosina_scores_estacion', metadata, autoload=True, autoload_with=engine_misions)
     tabla_preguntas = db.Table('hidrosina_preguntas_estacion', metadata, autoload=True, autoload_with=engine_misions)
     missions_taifelds_disfruta = db.Table('taifelds_disfruta', metadata, autoload=True, autoload_with=engine_misions)
@@ -2466,12 +2474,16 @@ def hidrosina_service():
         with engine_misions.connect() as connection:
             results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall() ########################TEMP#QUITADO
             results_yes = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag == 'Yes')).fetchall()
+            results_auditoria = connection.execute(db.select([missions_hidrosina_auditoria_strikes])).fetchall()
+            results_servicio = connection.execute(db.select([missions_hidrosina_servicio_strikes])).fetchall()
     except Exception as e:
         print(e)
         try:
             with engine_misions.connect() as connection:
                 results = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag != 'Yes')).fetchall() ########################TEMP#QUITADO
                 results_yes = connection.execute(db.select([missions_hidrosina]).where(missions_hidrosina.c.Flag == 'Yes')).fetchall()
+                results_auditoria = connection.execute(db.select([missions_hidrosina_auditoria_strikes])).fetchall()
+                results_servicio = connection.execute(db.select([missions_hidrosina_servicio_strikes])).fetchall()
         except Exception as e:
             print(e)
             json_respuesta = {'Location':False,'Time':False,'Service':False,'Live':False,'Porn':False,'Id':0,'Url_themask':'','url_thumbnail':'','msg':'Error de conexión, inténtalo nuevamente'}
@@ -2486,6 +2498,14 @@ def hidrosina_service():
     lat , lng, address, ids, names_hd, zonas = df['Latitude'].tolist(), df['Longitude'].tolist(), df['Address'].tolist(), df['Id'].tolist(), df['Name'].tolist(), df['Zona'].tolist()
     hora_inf, hora_sup = df['Horario_Inf_Timestamp'], df['Horario_Sup_Timestamp']
     user_pos = (data['Location_latitude'],data['Location_longitude'])
+
+    df_auditoria = pd.DataFrame(results_auditoria)
+    df_auditoria.columns = results_auditoria[0].keys()
+    hd_auditoria, strikes_auditoria = df_auditoria['HD'].tolist(), df_auditoria['Numero_de_calificaciones_bajas_en_Auditoria'].tolist()
+
+    df_servicio = pd.DataFrame(results_servicio)
+    df_servicio.columns = results_servicio[0].keys()
+    hd_servicio, strikes_servicio = df_servicio['Name'].tolist(), df_servicio['Numero_de_calificaciones_bajas_en_Servicio'].tolist()
 
     df_yes = pd.DataFrame(results_yes)
     df_yes.columns = results_yes[0].keys()
@@ -2555,6 +2575,8 @@ def hidrosina_service():
                 j = horarios_vs_real_index[0]
                 id_tienda = ids[j]
                 name_hd = names_hd[j]
+                j_auditoria = hd_auditoria.index(name_hd)
+                numero_de_strikes = strikes_auditoria[j_auditoria]
                 zona = zonas[j]
                 data['Location_mission_latitude'] = lat[j]
                 data['Location_mission_longitude'] = lng[j]
@@ -2582,6 +2604,15 @@ def hidrosina_service():
                     sh = gc.open_by_url("https://docs.google.com/spreadsheets/d/1EZn8lzDV-51jJ7p95aVC4afRIlDlocW7nbabCBppMLU/edit?usp=sharing")
                     wks = sh.sheet1
                     df_typeform = wks.get_as_df()
+
+                    df_typeform['uniforme limpio'] = ['uniforme limpio' if type(x) != float and 'limpio' in x else np.nan for x in df_typeform['¿Qué no tenía el despachador?']]
+                    df_typeform['cubrebocas'] = ['cubrebocas' if type(x) != float and 'cubrebocas' in x else np.nan for x in df_typeform['¿Qué no tenía el despachador?']]
+                    df_typeform['lentes protectores'] = ['lentes protectores' if type(x) != float and 'lentes' in x else np.nan for x in df_typeform['¿Qué no tenía el despachador?']]
+                    df_typeform['uniforme limpio'] = np.where(df_typeform['uniforme limpio'].isnull(),1,0)
+                    df_typeform['cubrebocas'] = np.where(df_typeform['cubrebocas'].isnull(),1,0)
+                    df_typeform['lentes protectores'] = np.where(df_typeform['lentes protectores'].isnull(),1,0)
+                    df_typeform['Los despachadores, ¿traían uniforme limpio, cubrebocas y lentes protectores?'] = (df_typeform['uniforme limpio'] + df_typeform['cubrebocas'] + df_typeform['lentes protectores']) * 1 / 3
+
                     df_row = df_typeform.loc[df_typeform['capture_id'] == hash_typeform]
                     if len(df_row) == 0:
                         print('Hash no encontrado')
@@ -2750,13 +2781,20 @@ def hidrosina_service():
                                                 '¿Entregó el ticket correcto?']]
                         df_row_examen = df_row_examen.replace(['FALSE','TRUE'],[False,True]) * 1
                         puntajes = pd.Series([35,25,40,20,15,10,15,10,20,10])
+                        puntajes_auditoria = pd.Series([35,25,40,0,0,0,0,0,0,0])
+                        puntajes_servicio = pd.Series([0,0,0,20,15,10,15,10,20,10])
                         calificacion = df_row_examen.values @ puntajes
+                        calificacion_auditoria = df_row_examen.values @ puntajes_auditoria
+                        calificacion_servicio = df_row_examen.values @ puntajes_servicio
 
                         if df_row['¿Los despachadores estaban ocupados atendiendo clientes?'].values == 'TRUE':
                             calificacion += 25
 
-                        calificacion = int(calificacion / 2)
-                        score = calificacion
+                        score = int(calificacion / 2)
+                        calificacion = score
+                        score_auditoria = int(calificacion_auditoria)
+                        score_servicio = int(calificacion_servicio)
+                        
 
                         if calificacion == 100:
                             try:
@@ -2782,6 +2820,114 @@ def hidrosina_service():
                             except Exception as e:
                                 print(e,'fallo email alerta')
                                 pass
+                        if score_auditoria < 90:
+                            if numero_de_strikes >= 1:
+                                if zona == 'Metro':
+                                    try:
+                                        fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                        nombre_despachador = qr_decoded
+                                        url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-metro"
+
+                                        payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_auditoria_baja,'service':from_service,'nombre_despachador':'no aplica','fecha_incidente':fecha_incidente,'Codigo_factura':'no aplica','subject':'ALERTA DE CALIFICACION BAJA Y RECURRENTE EN AUDITORIA'}
+                                        headers = {'Content-Type': 'application/json'}
+
+                                        mail_process31 = Process(target = enviar_mail, args = (url,headers,payload))
+                                        mail_process31.start()
+                                    except Exception as e:
+                                        print(e,'fallo email alerta')
+                                        pass
+                                else:
+                                    try:
+                                        fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                        nombre_despachador = qr_decoded
+                                        url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-provincia"
+
+
+                                        payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_auditoria_baja,'service':from_service,'nombre_despachador':'no aplica','fecha_incidente':fecha_incidente,'Codigo_factura':'no aplica','subject':'ALERTA DE CALIFICACION BAJA Y RECURRENTE EN AUDITORIA'}
+                                        headers = {'Content-Type': 'application/json'}
+
+                                        mail_process31 = Process(target = enviar_mail, args = (url,headers,payload))
+                                        mail_process31.start()
+                                    except Exception as e:
+                                        print(e,'fallo email alerta')
+                                        pass
+
+                            try:
+                                with engine_misions.connect() as connection:
+                                    connection.execute(missions_hidrosina_auditoria_strikes.update().where(missions_hidrosina_auditoria_strikes.c.HD == int(name_hd)).values(
+                                        Numero_de_calificaciones_bajas_en_Auditoria = int(numero_de_strikes) + 1
+                                        ))
+                            except Exception as e:
+                                print(e)
+                                try:
+                                    with engine_misions.connect() as connection:
+                                        connection.execute(missions_hidrosina_auditoria_strikes.update().where(missions_hidrosina_auditoria_strikes.c.HD == int(name_hd)).values(
+                                            Numero_de_calificaciones_bajas_en_Auditoria = int(numero_de_strikes) + 1
+                                            ))
+                                except Exception as e:
+                                    print(e)
+
+                        if score_servicio < 80:
+                            if qr_decoded in hd_servicio:
+                                j_servicio = hd_servicio.index(qr_decoded)
+                                numero_de_strikes_servicio = strikes_servicio[j_servicio]
+                                if numero_de_strikes_servicio >= 1 and qr_decoded != 'No se pudo leer nombre de ticket':
+                                    if zona == 'Metro':
+                                        try:
+                                            fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                            nombre_despachador = qr_decoded
+                                            url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-metro"
+
+                                            payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_servicio_bajo,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE CALIFICACION BAJA Y RECURRENTE EN SERVICIO'}
+                                            headers = {'Content-Type': 'application/json'}
+
+                                            mail_process32 = Process(target = enviar_mail, args = (url,headers,payload))
+                                            mail_process32.start()
+                                        except Exception as e:
+                                            print(e,'fallo email alerta')
+                                            pass
+                                    else:
+                                        try:
+                                            fecha_incidente = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+                                            nombre_despachador = qr_decoded
+                                            url = "https://us-central1-gchgame.cloudfunctions.net/mail-sender-alerta-provincia"
+
+                                            payload = {'id_tienda':name_hd,'message':body_hidrosina_alerta_servicio_bajo,'service':from_service,'nombre_despachador':nombre_despachador,'fecha_incidente':fecha_incidente,'Codigo_factura':codigo,'subject':'ALERTA DE CALIFICACION BAJA Y RECURRENTE EN SERVICIO'}
+                                            headers = {'Content-Type': 'application/json'}
+
+                                            mail_process32 = Process(target = enviar_mail, args = (url,headers,payload))
+                                            mail_process32.start()
+                                        except Exception as e:
+                                            print(e,'fallo email alerta')
+                                            pass
+
+
+                                try:
+                                    with engine_misions.connect() as connection:
+                                        connection.execute(missions_hidrosina_servicio_strikes.update().where(missions_hidrosina_servicio_strikes.c.Name == qr_decoded).values(
+                                            Numero_de_calificaciones_bajas_en_Servicio = int(numero_de_strikes_servicio) + 1
+                                            ))
+                                except Exception as e:
+                                    print(e)
+                                    try:
+                                        with engine_misions.connect() as connection:
+                                            connection.execute(missions_hidrosina_servicio_strikes.update().where(missions_hidrosina_servicio_strikes.c.Name == qr_decoded).values(
+                                                Numero_de_calificaciones_bajas_en_Servicio = int(numero_de_strikes_servicio) + 1
+                                                ))
+                                    except Exception as e:
+                                        print(e)
+                            else:
+                                try:
+                                    with engine_misions.connect() as connection:
+                                        connection.execute(missions_hidrosina_servicio_strikes.insert().values(Name = qr_decoded, Numero_de_calificaciones_bajas_en_Servicio = 1))
+                                except:
+                                    try:
+                                        with engine_misions.connect() as connection:
+                                            connection.execute(missions_hidrosina_servicio_strikes.insert().values(Name = qr_decoded, Numero_de_calificaciones_bajas_en_Servicio = 1))
+                                    except Exception as e:
+                                        print(e)
+                                
+
 
 
                 except Exception as e:
@@ -2793,7 +2939,8 @@ def hidrosina_service():
                         connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda).values(Flag = 'Yes',
                             Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Fecha_Hora = fecha + ' ' + hora,
                             User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = image_path,
-                            Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform, Score = score,
+                            Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform, Score = calificacion,
+                            Score_auditoria = score_auditoria, Score_servicio = score_servicio,
                             No_Ticket = no_ticket, QR_Decoded = qr_decoded, Alerta = alerta_sanitaria, Alerta_precios = alerta_precios_apagados,
                             Alerta_ticket = alerta_ticket_incorrecto))
                         if (datetime.utcnow() - timedelta(hours=6)).day < 15:
@@ -2805,7 +2952,8 @@ def hidrosina_service():
                             connection.execute(missions_hidrosina.update().where(missions_hidrosina.c.Id == id_tienda).values(Flag = 'Yes',
                                 Date = (datetime.utcnow() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), Fecha_Hora = fecha + ' ' + hora,
                                 User_Id = user_id, User_Latitude = user_lat, User_Longitude = user_lng, Url_Photo = image_path,
-                                Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform, Score = score,
+                                Url_Video = video_path, Mission_Id = miss_id, Codigo_factura = codigo, Hash_typeform = hash_typeform, Score = calificacion,
+                                Score_auditoria = score_auditoria, Score_servicio = score_servicio,
                                 No_Ticket = no_ticket, QR_Decoded = qr_decoded, Alerta = alerta_sanitaria, Alerta_precios = alerta_precios_apagados,
                                 Alerta_ticket = alerta_ticket_incorrecto))
                         if (datetime.utcnow() - timedelta(hours=6)).day < 15:
